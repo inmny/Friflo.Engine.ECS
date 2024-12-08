@@ -19,7 +19,6 @@ public sealed class NativeAOT
     private             bool                        engineTypesRegistered;
         
     private readonly    HashSet<Type>               typeSet     = new();
-    private readonly    TypeStore                   typeStore   = new TypeStore();
     private readonly    SchemaTypes                 schemaTypes = new();
     private readonly    Dictionary<Assembly, int>   assemblyMap = new();
     private readonly    List<Assembly>              assemblies  = new();
@@ -74,7 +73,7 @@ A type initializer threw an exception. To determine which type, inspect the Inne
     {
         InitSchema();
 
-        var dependants  = schemaTypes.CreateSchemaTypes(typeStore, assemblies);
+        var dependants  = schemaTypes.CreateSchemaTypes(assemblies);
         entitySchema    = new EntitySchema(dependants, schemaTypes);
         Instance        = this;
         return entitySchema;
@@ -124,7 +123,7 @@ A type initializer threw an exception. To determine which type, inspect the Inne
         InitSchema();
         if (typeSet.Add(typeof(T))) {
             AddType(typeof(T), SchemaTypeKind.Component);
-            SchemaUtils.CreateComponentType<T>(typeStore, 0, null, null, null, null); // dummy call to prevent trimming required type info
+            SchemaUtils.CreateComponentType<T>(0, null, null); // dummy call to prevent trimming required type info
         }
     }
     
@@ -142,7 +141,7 @@ A type initializer threw an exception. To determine which type, inspect the Inne
         InitSchema();
         if (typeSet.Add(typeof(T))) {
             AddType(typeof(T), SchemaTypeKind.Script);
-            SchemaUtils.CreateScriptType<T>(typeStore, 0);          // dummy call to prevent trimming required type info
+            SchemaUtils.CreateScriptType<T>(0);          // dummy call to prevent trimming required type info
         }
     }
 }

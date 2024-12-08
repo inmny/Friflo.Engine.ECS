@@ -27,7 +27,7 @@ internal abstract class StructHeap : IComponentStash
     // ReSharper disable once NotAccessedField.Local
     private             Archetype   archetype;      // only used for debugging
 #endif
-    public    abstract  IComponent  GetStashDebug  ();
+    public    abstract  object      GetStashDebug  ();
 
     internal  abstract  Type        StructType              { get; }
     internal  abstract  void        StashComponent          (int compIndex);
@@ -40,9 +40,12 @@ internal abstract class StructHeap : IComponentStash
     internal abstract void SetComponent(int compIndex, in IComponent component);
     internal  abstract  void        SetComponentDefault     (int compIndex);
     internal  abstract  void        SetComponentsDefault    (int compIndexStart, int count);
-    internal  abstract  IComponent  GetComponentDebug       (int compIndex);
+    internal  abstract  object      GetComponentDebug       (int compIndex);
     internal  abstract  Bytes       Write                   (ObjectWriter writer, int compIndex);
     internal  abstract  void        Read                    (ObjectReader reader, int compIndex, JsonValue json);
+    internal  abstract  void        UpdateIndex             (Entity entity);
+    internal  abstract  void        AddIndex                (Entity entity);
+    internal  abstract  void        RemoveIndex             (Entity entity);
 
     internal StructHeap(int structIndex) {
         this.structIndex    = structIndex;

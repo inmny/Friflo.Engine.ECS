@@ -203,10 +203,8 @@ public partial class EntityStore
             return node.compIndex;
         }
         entityCount++;
-        revision++;
         node.compIndex  = Archetype.AddEntity(archetype, id);
         node.archetype  = archetype;
-        node.revision   = revision;   
         // node.flags      = Created;
         return node.compIndex;
     }
@@ -226,7 +224,6 @@ public partial class EntityStore
             ref var node    = ref localNodes[id];
             node.compIndex  = index;
             node.archetype  = archetype;
-            node.revision++;
             // node.flags      = Created;
         }
         if (intern.pidType == PidType.RandomPids) {

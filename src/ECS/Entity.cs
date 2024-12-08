@@ -177,6 +177,7 @@ namespace Friflo.Engine.ECS;
 /// </remarks>
 [CLSCompliant(true)]
 [StructLayout(LayoutKind.Explicit)]
+[Json.Fliox.TypeMapper(typeof(Serialize.TypeMapperEntity))]
 public readonly partial struct Entity : IEquatable<Entity>
 {
     // ------------------------------------ general properties ------------------------------------
@@ -801,7 +802,7 @@ public readonly partial struct Entity : IEquatable<Entity>
         return (archetype != null && node.revision == Revision) ? entityStore : null;
     }
     
-    private NullReferenceException EntityNullException() {
+    internal NullReferenceException EntityNullException() {
         return new NullReferenceException($"entity is null. id: {Id}");
     }
     
