@@ -26,7 +26,7 @@ public delegate void ForEachComponents<T1, T2, T3, T4>(ref T1 component1, ref T2
 
 /// <summary>
 /// A query instance use to retrieve the given component types.
-/// See <a href="https://friflo.gitbook.io/friflo.engine.ecs/examples/general#query-entities">Example.</a>
+/// See <a href="https://friflo.gitbook.io/friflo.engine.ecs/documentation/query">Example.</a>
 /// </summary>
 public sealed class ArchetypeQuery<T1, T2, T3, T4> : ArchetypeQuery
     where T1 : struct
@@ -71,7 +71,7 @@ public sealed class ArchetypeQuery<T1, T2, T3, T4> : ArchetypeQuery
     
     /// <summary>
     /// Return the <see cref="Chunk{T}"/>'s storing the components and entities of an <see cref="ArchetypeQuery{T1,T2,T3,T4}"/>.<br/>
-    /// See <a href="https://friflo.gitbook.io/friflo.engine.ecs/examples/optimization#enumerate-query-chunks">Example.</a>
+    /// See <a href="https://friflo.gitbook.io/friflo.engine.ecs/documentation/query-optimization#enumerate-query-chunks">Example.</a>
     /// </summary>
     public      QueryChunks    <T1, T2, T3, T4>  Chunks         => new (this);
     

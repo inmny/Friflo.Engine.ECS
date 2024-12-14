@@ -20,7 +20,7 @@ namespace Friflo.Engine.ECS;
 
 /// <summary>
 /// An <see cref="Archetype"/> store entities with a specific set of <see cref="IComponent"/> and <see cref="ITag"/> types.<br/>
-/// See <a href="https://friflo.gitbook.io/friflo.engine.ecs/examples/general#archetype">Example.</a>
+/// See <a href="https://friflo.gitbook.io/friflo.engine.ecs/documentation/entity#archetype">Example.</a>
 /// </summary>
 /// <remarks>
 /// E.g. all entities with a <see cref="Position"/> and <see cref="Rotation"/> component are store in the same archetype.<br/>
@@ -309,10 +309,12 @@ public sealed class Archetype
     }
     
     /// <remarks>Must be used only on case all <see cref="ComponentTypes"/> are <see cref="ComponentType.IsBlittable"/></remarks>
-    internal static void CopyComponents(Archetype arch, int sourceIndex, int targetIndex)
+    internal static void CloneComponents(Archetype arch, CopyContext context)
     {
+        var sourceIndex = context.source.compIndex;
+        var targetIndex = context.target.compIndex;
         foreach (var sourceHeap in arch.structHeaps) {
-            sourceHeap.CopyComponent(sourceIndex, targetIndex);
+            sourceHeap.CloneComponent(sourceIndex, targetIndex, context);
         }
     }
     

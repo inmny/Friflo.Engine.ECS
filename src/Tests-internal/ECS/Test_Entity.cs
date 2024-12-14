@@ -232,6 +232,31 @@ public static class Test_Entity
         AreEqual(1,         store.EntityScripts.Length);
         AreSame (script2,   store.EntityScripts[0].scripts[0]);
     }
+    
+    [Test]
+    public static void Test_Entity_CopyValue_no_alloc()
+    {
+        var copyValue = CopyValueUtils<CopyComponent>.CopyValue;
+        var source = new CopyComponent();
+        var target = new CopyComponent();
+        var start = Mem.GetAllocatedBytes();
+        copyValue(source, ref target, default);
+        Mem.AssertNoAlloc(start);
+    }
+    
+    [Test]
+    public static void Test_Entity_CopyValue_ArgumentException()
+    {
+        var copyValue = CopyValueUtils<NonBlittableArgumentException>.CopyValue;
+        var source = new NonBlittableArgumentException();
+        var target = new NonBlittableArgumentException();
+        
+        var e = Throws<ArgumentException>(() => {
+            copyValue(source, ref target, default);
+        });
+        var expect = "Incompatible method signature: Tests.ECS.NonBlittableArgumentException.CopyValue() - expect: static void CopyValue(in NonBlittableArgumentException source, ref NonBlittableArgumentException target, in CopyContext context)";
+        AreEqual(expect, e!.Message);
+    }
 }
 
 internal struct MyTag : ITag { }
