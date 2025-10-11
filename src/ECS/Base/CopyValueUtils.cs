@@ -26,7 +26,9 @@ internal static class CopyValueUtils
     {
         const BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.InvokeMethod;
         var method = typeof(TComponent).GetMethod("CopyValue", flags);
-        if (method is null) {
+        if (method is null)
+        {
+            return ShallowCopyValue;
             var schema = EntityStoreBase.Static.EntitySchema;
             var componentType = schema.ComponentTypeByType[typeof(TComponent)];
             if (componentType.IsBlittable) {
@@ -40,6 +42,11 @@ internal static class CopyValueUtils
         } catch (ArgumentException _) {
             return IncompatibleSignature;
         }
+    }
+    
+    private static void ShallowCopyValue<TValue>(in TValue value, ref TValue target, in CopyContext context)
+    {
+        target = value;
     }
     
     private static void MissingCopyValue<TValue>(in TValue value, ref TValue target, in CopyContext context) {
