@@ -2,10 +2,37 @@
 // See LICENSE file in the project root for full license information.
 
 // ReSharper disable once CheckNamespace
+
+using System;
+
 namespace Friflo.Engine.ECS;
 
 public static partial class EntityExtensions
 {
+    /// <summary> Remove the passed component and tags to the entity. </summary>
+    /// <remarks> DO NOT USE IT FREQUENTLY</remarks>
+    public static void RemoveNonGeneric(this Entity entity, in Type componentType, in Tags tags = default)
+    {
+        var store           = entity.store;
+        var id              = entity.Id;
+        ref var node        = ref store.nodes[id];
+        var oldType         = node.archetype;
+        var oldCompIndex    = node.compIndex;
+        
+        var structIndex = SchemaTypeUtils.GetStructIndex(componentType);
+        var types = new ComponentTypes(structIndex);
+        var newType         = store.GetArchetypeAdd(oldType, new ComponentTypes(structIndex), tags);
+        
+        var signatureIndexes = new SignatureIndexes(structIndex);
+        StashRemoveComponents(store, signatureIndexes, oldType, oldCompIndex);
+        
+        
+        node.compIndex      = Archetype.MoveEntityTo(oldType, id, oldCompIndex, newType);
+        node.archetype      = newType;
+        
+        // Send event. See: SEND_EVENT notes
+        SendRemoveEvents(entity, types, signatureIndexes, newType, oldType);
+    }
     /// <summary> Remove the specified component and tags from the entity. </summary>
     public static void Remove<T1>(this Entity entity, in Tags tags = default)
         where T1 : struct, IComponent
