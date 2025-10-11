@@ -262,13 +262,18 @@ public abstract class BaseSystem
         return sb.ToString();
     }
     
+    private int pre_length = 50;
     /// <summary>
     /// Add performance statistics formatted as a table to the given <see cref="StringBuilder"/> without memory allocations.
     /// </summary>
     public void AppendPerfLog(StringBuilder stringBuilder) {
         var stores  = SystemRoot?.stores.count ?? 0;
-        stringBuilder.Append($"stores: {stores,-3}                   E M      last ms       sum ms      updates     last mem      sum mem     entities\n");
-        stringBuilder.Append("---------------------         ---     --------     --------     --------     --------     --------     --------\n");
+        stringBuilder.Append($"stores: {stores,-3}");
+        stringBuilder.Append(' ', pre_length - 11);
+        stringBuilder.Append("E M      last ms       sum ms      updates     last mem      sum mem     entities\n");
+        stringBuilder.Append('-', 11);
+        stringBuilder.Append(' ', pre_length-11);
+        stringBuilder.Append("---     --------     --------     --------     --------     --------     --------\n");
         AppendPerfStats(stringBuilder, 0);
         stringBuilder.Replace(',', '.'); // no more patience with NumberFormatInfo
     }
@@ -294,7 +299,7 @@ public abstract class BaseSystem
         } else {
             monitored = parentGroup?.MonitorPerf ?? false;
         }
-        var len = 30 - (sb.Length - start);
+        var len = Math.Max(0, pre_length - (sb.Length - start));
         sb.Append(' ', len);
         sb.Append(enabled   ? "+ " : "- ");
         sb.Append(monitored ? "m" : " ");
