@@ -2,6 +2,8 @@
 // See LICENSE file in the project root for full license information.
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Friflo.Engine.ECS.Predefined;
 using static System.Diagnostics.DebuggerBrowsableState;
@@ -698,6 +700,11 @@ public readonly partial struct Entity : IEquatable<Entity>
     public override int     GetHashCode()       => Id ^ Revision;
     
     public override string  ToString()          => EntityUtils.EntityToString(this);
+
+    public IEnumerable<Type> GetComponentTypes()
+    {
+        return archetype.ComponentTypes.Select(component => component.Type);
+    }
     
     internal Entity(EntityStore entityStore, int id) {
         store       = entityStore;
