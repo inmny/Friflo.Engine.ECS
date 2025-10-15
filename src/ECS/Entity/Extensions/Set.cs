@@ -6,6 +6,28 @@ namespace Friflo.Engine.ECS;
 
 public static partial class EntityExtensions
 {
+    /// <summary> Set the passed component to the entity. </summary>
+    /// <remarks> DO NOT USE IT FREQUENTLY</remarks>
+    public static void SetNonGeneric(this Entity entity, in IComponent component)
+    {
+        var store           = entity.store;
+        var id              = entity.Id;
+        ref var node        = ref store.nodes[id];
+        var type         = node.archetype;
+        var componentIndex    = node.compIndex;
+        
+        var structIndex = SchemaTypeUtils.GetStructIndex(component.GetType());
+        var types = new ComponentTypes(structIndex);
+        
+        var signatureIndexes = new SignatureIndexes(structIndex);
+        StashSetComponents(entity, types, signatureIndexes, type, componentIndex);
+        
+        if (!SetAssignComponentsNonGeneric(type, componentIndex, structIndex, component)) {
+            throw MissingComponentException(entity, signatureIndexes, type);
+        }
+        // Send event. See: SEND_EVENT notes
+        SendSetEvents(entity, types, signatureIndexes, type);
+    }
     /// <summary> Set the passed component on the entity. </summary>
     /// <exception cref="ECS.MissingComponentException"> if the entity does not contain a passed component. </exception>
     public static void Set<T1>(

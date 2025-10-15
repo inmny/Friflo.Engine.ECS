@@ -408,6 +408,18 @@ public readonly partial struct Entity : IEquatable<Entity>
         }
         throw EntityNullException();
     }
+    /// <summary>
+    /// Return the boxed component of the given type.
+    /// </summary>
+    public object GetComponent(Type compType)
+    {
+        ref var node = ref store.nodes[Id];
+        if (node.IsAlive(Revision))
+        {
+            return node.archetype.heapMap[SchemaTypeUtils.GetStructIndex(compType)].GetComponentDebug(node.compIndex);
+        }
+        throw EntityNullException();
+    }
     
     /// <remarks>Executes in O(1)</remarks>
     public bool     TryGetComponent<T>(out T result) where T : struct, IComponent
