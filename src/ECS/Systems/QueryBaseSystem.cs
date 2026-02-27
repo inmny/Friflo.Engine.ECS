@@ -42,23 +42,23 @@ public abstract class QuerySystemBase : BaseSystem
     [Browse(Never)] public          ComponentTypes      ComponentTypes  => componentTypes;
 
     /// <summary> Return all system queries. One per store in <see cref="SystemRoot.Stores"/>. </summary>
-                    public ReadOnlyList<ArchetypeQuery> Queries         => queries;
+                    public ReadOnlyList<ArchetypeQuery> Queries         => queries.List;
 
     /// <summary> Return the <see cref="CommandBuffer"/> of its <see cref="BaseSystem.ParentGroup"/>.</summary>
     [Browse(Never)] protected       CommandBuffer       CommandBuffer   => commandBuffer;
     #endregion
     
 #region fields
-    [Browse(Never)] private  readonly   QueryFilter                 filter  = new ();
-    [Browse(Never)] private  readonly   ComponentTypes              componentTypes;
-    [Browse(Never)] private             ReadOnlyList<ArchetypeQuery>queries;
-    [Browse(Never)] private             CommandBuffer               commandBuffer;
+    [Browse(Never)] private  readonly   QueryFilter                         filter  = new ();
+    [Browse(Never)] private  readonly   ComponentTypes                      componentTypes;
+    [Browse(Never)] private             ReadOnlyList<ArchetypeQuery>.Mutate queries;
+    [Browse(Never)] private             CommandBuffer                       commandBuffer;
     #endregion
     
 #region constructor
     internal QuerySystemBase(in ComponentTypes componentTypes) {
         this.componentTypes = componentTypes;
-        queries             = new ReadOnlyList<ArchetypeQuery>(Array.Empty<ArchetypeQuery>());
+        queries             = new ReadOnlyList<ArchetypeQuery>.Mutate(Array.Empty<ArchetypeQuery>());
     }
     #endregion
     
@@ -68,14 +68,16 @@ public abstract class QuerySystemBase : BaseSystem
     #endregion
     
 #region store: add / remove
-    protected internal override void OnAddStore(EntityStore entityStore)
+    internal override void AddStoreInternal(EntityStore entityStore)
     {
         var query = CreateQuery(entityStore);
         queries.Add(query);
+        OnAddStore(entityStore);
     }
     
-    protected internal override void OnRemoveStore(EntityStore entityStore)
+    internal override void RemoveStoreInternal(EntityStore entityStore)
     {
+        OnRemoveStore(entityStore);
         foreach (var query in queries) {
             if (query.Store != entityStore) {
                 continue;
@@ -93,7 +95,7 @@ public abstract class QuerySystemBase : BaseSystem
     protected internal override void OnUpdateGroup()
     {
         var commandBuffers = ParentGroup.commandBuffers;
-        for (int n = 0; n < queries.count; n++)
+        for (int n = 0; n < queries.Count; n++)
         {
             var query       = queries[n];
             commandBuffer   = commandBuffers[n];

@@ -9,8 +9,11 @@ using Browse = System.Diagnostics.DebuggerBrowsableAttribute;
 // ReSharper disable once CheckNamespace
 namespace Friflo.Engine.ECS;
 
+/// <summary>
+/// Raw identifier of an <see cref="Entity"/> without containing <see cref="EntityStore"/>.
+/// </summary>
 [StructLayout(LayoutKind.Explicit)]
-internal readonly struct RawEntity  : IEquatable<RawEntity>
+public readonly struct RawEntity  : IEquatable<RawEntity>
 {
     [FieldOffset(0)]    public   readonly   int     Id;         //  4
     [FieldOffset(4)]    public   readonly   short   Revision;   //  2
@@ -24,6 +27,8 @@ internal readonly struct RawEntity  : IEquatable<RawEntity>
     
     public override bool    Equals(object obj)  => throw new NotImplementedException("by intention to avoid boxing");
     public override int     GetHashCode()       => Id ^ Revision;
+    
+    public override string  ToString()          => Id.ToString();
     
     internal RawEntity(int id, short revision) {
         Id          = id;

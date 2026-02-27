@@ -46,10 +46,10 @@ internal class EntityLinkRelations<TRelation> : GenericEntityRelations<TRelation
     
 #region mutation
 
-    /// <returns>true - component is newly added to the entity.<br/> false - component is updated.</returns>
-    internal override bool AddComponent<T>(int id, in T component)
+    /// <returns>true - relation is newly added to the entity.<br/> false - relation is updated.</returns>
+    internal override bool AddRelation<T>(int id, in T relation)
     {
-        Entity target   = RelationUtils<T, Entity>.GetRelationKey(component);
+        Entity target   = RelationUtils<T, Entity>.GetRelationKey(relation);
         bool added      = true;
         int position    = FindRelationPosition(id, target, out var positions, out _);
         if (position >= 0) {
@@ -59,7 +59,7 @@ internal class EntityLinkRelations<TRelation> : GenericEntityRelations<TRelation
         position = AddEntityRelation(id, positions);
         LinkRelationUtils.AddComponentValue(id, target.Id, this);
     AssignComponent:
-        ((StructHeap<T>)heap).components[position] = component;
+        ((StructHeap<T>)heap).components[position] = relation;
         return added;
     }
 
@@ -79,6 +79,7 @@ internal class EntityLinkRelations<TRelation> : GenericEntityRelations<TRelation
     /// Executes in O(N * M).  N: number link relations  M: RemoveRelation() executes in O(M)
     internal override void RemoveLinksWithTarget(int targetId)
     {
+        version++;
         linkEntityMap.TryGetValue(targetId, out var sourceIds);
         var sourceIdSpan = sourceIds.GetSpan(linkIdsHeap, store);
         // TODO check if it necessary to make a copy of idSpan - e.g. by stackalloc
@@ -90,6 +91,7 @@ internal class EntityLinkRelations<TRelation> : GenericEntityRelations<TRelation
     
     internal override void RemoveEntityRelations(int id)
     {
+        version++;
         positionMap.TryGetValue(id, out var positions);
         RemoveIncomingLinks(positions, id);
         while (positions.count > 0) {

@@ -180,7 +180,7 @@ namespace Friflo.Engine.ECS;
 [CLSCompliant(true)]
 [StructLayout(LayoutKind.Explicit)]
 [Json.Fliox.TypeMapper(typeof(Serialize.TypeMapperEntity))]
-public readonly partial struct Entity : IEquatable<Entity>
+public readonly partial struct Entity : IEquatable<Entity>, IComparable<Entity>
 {
     // ------------------------------------ general properties ------------------------------------
 #region general properties
@@ -375,7 +375,7 @@ public readonly partial struct Entity : IEquatable<Entity>
     /// <summary>Unique entity id.<br/>
     /// Uniqueness relates to the <see cref="Entity"/>'s stored in its <see cref="EntityStore"/></summary>
     [Browse(Never)]
-    [FieldOffset(8)]    internal    readonly    RawEntity   rawEntity;  // (8)
+    [FieldOffset(8)]    public      readonly    RawEntity   RawEntity;  // (8)
     [FieldOffset(8)]    public      readonly    int         Id;         //  4
     [Browse(Never)]
     [FieldOffset(12)]   public      readonly    short       Revision;   //  2
@@ -494,7 +494,7 @@ public readonly partial struct Entity : IEquatable<Entity>
     /// <summary>Gets the script with the passed <typeparamref name="TScript"/> <see cref="Type"/>.</summary>
     /// <returns>
     /// Returns true if the entity has a script the passed <typeparamref name="TScript"/> <see cref="Type"/>.<br/>
-    /// Otherwise false.
+    /// Otherwise, false.
     /// </returns>
     public bool     TryGetScript<TScript>(out TScript result)
         where TScript : Script, new()
@@ -516,7 +516,7 @@ public readonly partial struct Entity : IEquatable<Entity>
     }
     /// <summary>Remove the script with the given <typeparamref name="TScript"/> <see cref="Type"/> from the entity.</summary>
     /// <returns>
-    /// The script the script with the passed <typeparamref name="TScript"/> <see cref="Type"/> previously added to the entity.<br/>
+    /// The script with the passed <typeparamref name="TScript"/> <see cref="Type"/> previously added to the entity.<br/>
     /// Or null if the entity has no script with the passed <typeparamref name="TScript"/> <see cref="Type"/>.
     /// </returns>
     /// <remarks>Note: Use <see cref="EntityUtils.RemoveEntityScript"/> as non generic alternative.</remarks>
@@ -552,7 +552,7 @@ public readonly partial struct Entity : IEquatable<Entity>
         }
         throw EntityNullException();
     }
-    /// <summary>Add the given <typeparamref name="TTag"/> from the entity.</summary>
+    /// <summary>Remove the given <typeparamref name="TTag"/> from the entity.</summary>
     public bool RemoveTag<TTag>() where TTag : struct, ITag {
         int index = 0;
         ref var node    = ref store.nodes[Id];
@@ -675,29 +675,54 @@ public readonly partial struct Entity : IEquatable<Entity>
 
     // ------------------------------------ general methods ---------------------------------------
 #region general - methods
+    /// <summary>
+    /// Copy all components, tags and scripts of this entity to the given <paramref name="target"/> entity.<br/>
+    /// This entity and the <paramref name="target"/> entity can be in the same or different stores.<br/>
+    /// This method can be used to "clone" all or a subset of entities to a different store.
+    /// </summary>
+    /// <remarks>
+    /// Children of this are not copied to the <paramref name="target"/> entity.<br/>
+    /// If doing this both entities would have the same children.
+    /// </remarks>
+    public          void    CopyEntity (Entity target) => EntityStore.CopyEntity(this, target);
+    
+    /// <summary>
+    /// Create and return a clone of this entity.<br/>
+    /// The cloned entity will have the same components and tags as this entity.
+    /// </summary>
+    /// <remarks>
+    /// Children of this entity are not copied to the cloned entity.<br/>
+    /// If doing this both entities would have the same children.
+    /// </remarks>
+    public          Entity  CloneEntity() => store.CloneEntity(this);
+
     /// <summary> Return true if the passed entities have the same <see cref="Entity.Id"/>'s. </summary>
-    public static   bool    operator == (Entity a, Entity b)    => a.rawEntity == b.rawEntity && a.store == b.store;
+    public static   bool    operator == (Entity a, Entity b)    => a.RawEntity == b.RawEntity && a.store == b.store;
     
     /// <summary> Return true if the passed entities have the different <see cref="Entity.Id"/>'s. </summary>
-    public static   bool    operator != (Entity a, Entity b)    => a.rawEntity != b.rawEntity || a.store != b.store;
+    public static   bool    operator != (Entity a, Entity b)    => a.RawEntity != b.RawEntity || a.store != b.store;
 
     // --- IEquatable<T>
-    public          bool    Equals(Entity other)                => rawEntity == other.rawEntity && store == other.store;
+    public          bool    Equals(Entity other)                => RawEntity == other.RawEntity && store == other.store;
+
+    // --- IComparable<T>
+    public          int     CompareTo(Entity other) {
+        if (Id < other.Id) return -1;
+        if (Id > other.Id) return +1;
+        return 0;
+    }
 
     // --- object
-    /// <summary> Note: Not implemented to avoid excessive boxing. </summary>
-    /// <remarks> Use <see cref="operator=="/> or <see cref="EntityUtils.EqualityComparer"/> </remarks>
-    public override bool Equals(object obj)
-    {
-        if (obj is Entity other)
-        {
-            return rawEntity == other.rawEntity && store == other.store;
+    public override bool    Equals(object obj) {
+        if (obj is Entity other) {
+            return RawEntity == other.RawEntity && store == other.store;
         }
-
         return false;
     }
+    // was: public override bool    Equals(object obj)  => throw EntityUtils.NotImplemented(Id, "== Equals(Entity)");
     
     public override int     GetHashCode()       => Id ^ Revision;
+    // was: public override int     GetHashCode()       => throw EntityUtils.NotImplemented(Id, nameof(Id));
     
     public override string  ToString()          => EntityUtils.EntityToString(this);
 
@@ -716,6 +741,11 @@ public readonly partial struct Entity : IEquatable<Entity>
         store       = entityStore;
         Id          = id;
         Revision    = revision;
+    }
+    
+    internal Entity(EntityStore entityStore, RawEntity rawEntity) {
+        store           = entityStore;
+        this.RawEntity  = rawEntity;
     }
 
     /// <summary>
@@ -808,7 +838,7 @@ public readonly partial struct Entity : IEquatable<Entity>
     // ------------------------------------ internal properties -----------------------------------
 #region internal properties
     // ReSharper disable InconsistentNaming - placed on bottom to disable all subsequent hints
-    [Browse(Never)] internal        Archetype      archetype    =>     store. nodes[Id].archetype;
+    [Browse(Never)] internal        Archetype      archetype    =>     store.nodes[Id].archetype;
     [Browse(Never)] internal        int            compIndex    =>     store.nodes[Id].compIndex;
     
     internal Archetype GetArchetype() {

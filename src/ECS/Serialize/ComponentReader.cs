@@ -68,6 +68,7 @@ internal sealed class ComponentReader
             return error;
         }
         SetEntityArchetype(dataEntity, entity, store, options);
+        mapperContextStore.entity = entity;
         return ReadComponents(entity);
     }
     
@@ -149,6 +150,7 @@ internal sealed class ComponentReader
                 var componentType   = (ComponentType)schemaType;
                 var heap            = entity.archetype.heapMap[componentType.StructIndex]; // no range or null check required
                 // --- read & change component
+                mapperContextStore.componentType = componentType;
                 heap.Read(componentReader, entity.compIndex, json);
                 break;
         }
@@ -229,7 +231,7 @@ internal sealed class ComponentReader
         {
             ref var node    = ref entity.store.nodes[entity.Id];
             node.archetype  = newType;
-            node.compIndex  = Archetype.MoveEntityTo(curType, entity.Id, node.compIndex, newType);
+            node.compIndex  = Archetype.MoveEntityTo(curType, entity.Id, node.compIndex, newType); // structural change assertion: DataEntityToEntity()
         }
         if (unresolvedTagList.Count > 0) {
             AddUnresolvedTags(entity);

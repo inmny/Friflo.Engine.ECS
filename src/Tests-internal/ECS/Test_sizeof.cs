@@ -1,5 +1,7 @@
-﻿using System.Runtime.InteropServices;
-using Friflo.Engine.ECS;using Friflo.Engine.ECS.Predefined;
+﻿using System;
+using System.Runtime.InteropServices;
+using Friflo.Engine.ECS;
+using Friflo.Engine.ECS.Predefined;
 using Friflo.Engine.ECS.Systems;
 using Friflo.Engine.ECS.Utils;
 using NUnit.Framework;
@@ -30,6 +32,9 @@ public static class Test_sizeof
     public static unsafe void Test_sizeof_Entity() {
         var size = sizeof(Entity);
         AreEqual(16, size);
+        
+        size = sizeof(RawEntity);
+        AreEqual(8, size);
     }
     
     [Test]
@@ -147,8 +152,11 @@ public static class Test_sizeof
         AreEqual(24, size);
         
         size = sizeof(EntityChange);
-        AreEqual(96, size);
-        
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
+            AreEqual(80, size);
+        } else {
+            AreEqual(96, size);
+        }
         size = sizeof(EntityEvent);
         AreEqual(8, size);
     }

@@ -5,7 +5,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using static System.Diagnostics.DebuggerBrowsableState;
 using Browse = System.Diagnostics.DebuggerBrowsableAttribute;
 
@@ -22,7 +21,7 @@ namespace Friflo.Engine.ECS;
 /// See <a href="https://friflo.gitbook.io/friflo.engine.ecs/documentation/batch">Example.</a>
 /// </summary>
 [DebuggerTypeProxy(typeof(EntityListDebugView))]
-public sealed class EntityList : IList<Entity>
+public sealed class EntityList : IList<Entity>, IReadOnlyList<Entity>
 {
 #region properties
     /// <summary> Returns the number of entities stored in the container. </summary>
@@ -34,13 +33,13 @@ public sealed class EntityList : IList<Entity>
     public              EntityStore EntityStore => entityStore;
     
     /// <summary> Return the ids of entities stored in the container. </summary>
-    public ReadOnlySpan<int>        Ids         => new (ids, 0, count);
+    public ReadOnlySpan<RawEntity>  Ids         => new (ids, 0, count);
     
     public override     string      ToString()  => $"Count: {count}";
     #endregion
     
 #region fields
-    [Browse(Never)] internal    int[]       ids;            //  8
+    [Browse(Never)] internal    RawEntity[] ids;            //  8
     [Browse(Never)] internal    EntityStore entityStore;    //  8
     [Browse(Never)] internal    int         count;          //  4
     #endregion
@@ -52,7 +51,7 @@ public sealed class EntityList : IList<Entity>
     /// </summary>
     public EntityList()
     {
-        ids         = Array.Empty<int>();
+        ids         = Array.Empty<RawEntity>();
     }
 
     /// <summary>
@@ -61,7 +60,7 @@ public sealed class EntityList : IList<Entity>
     public EntityList(EntityStore store)
     {
         entityStore = store;
-        ids         = Array.Empty<int>();
+        ids         = Array.Empty<RawEntity>();
     }
     
     /// <summary>
@@ -79,14 +78,14 @@ public sealed class EntityList : IList<Entity>
         if (capacity <= ids.Length) {
             return;
         }
-        var newIds = new int[capacity];
-        var source = new ReadOnlySpan<int>  (ids,    0, count) ;
-        var target = new Span<int>          (newIds, 0, count) ;
+        var newIds = new RawEntity[capacity];
+        var source = new ReadOnlySpan<RawEntity>  (ids,    0, count) ;
+        var target = new Span<RawEntity>          (newIds, 0, count) ;
         source.CopyTo(target);
         ids = newIds;
     }
     #endregion
-
+    
 #region add entities
     /// <summary> Removes all entities from the <see cref="EntityList"/>. </summary>
     public void Clear()
@@ -103,7 +102,7 @@ public sealed class EntityList : IList<Entity>
         if (ids.Length == count) {
             ResizeIds();
         }
-        ids[count++] = entity.Id;
+        ids[count++] = entity.RawEntity;
     }
     
     /// <summary>
@@ -119,10 +118,10 @@ public sealed class EntityList : IList<Entity>
         if (ids.Length == count) {
             ResizeIds();
         }
-        ids[count++] = id;
+        ids[count++]   = new RawEntity(id, store.nodes[id].revision);
     }
     
-    internal void AddInternal(int id)
+    internal void AddInternal(RawEntity id)
     {
         if (ids.Length == count) {
             ResizeIds();
@@ -142,9 +141,10 @@ public sealed class EntityList : IList<Entity>
     
     private void AddEntityTree(Entity entity)
     {
-        AddInternal(entity.Id);
+        AddInternal(entity.RawEntity);
+        var store = entityStore;
         foreach (var id in EntityStore.GetChildIds(entity)) {
-            var child = new Entity(entityStore, id);
+            var child = new Entity(store, id);
             AddEntityTree(child);
         }
     }
@@ -165,8 +165,8 @@ public sealed class EntityList : IList<Entity>
         foreach (var id in Ids)
         {
             // don't capture store.nodes. Application event handler may resize
-            ref var node = ref store.nodes[id]; 
-            EntityStoreBase.AddTags(store, tags, id, ref node.archetype, ref node.compIndex, ref index);
+            ref var node = ref store.nodes[id.Id]; 
+            EntityStoreBase.AddTags(store, tags, id.Id, ref node.archetype, ref node.compIndex, ref index);
         }
     }
     
@@ -180,8 +180,8 @@ public sealed class EntityList : IList<Entity>
         foreach (var id in Ids)
         {
             // don't capture store.nodes. Application event handler may resize
-            ref var node = ref store.nodes[id];
-            EntityStoreBase.RemoveTags(store, tags, id, ref node.archetype, ref node.compIndex, ref index);
+            ref var node = ref store.nodes[id.Id];
+            EntityStoreBase.RemoveTags(store, tags, id.Id, ref node.archetype, ref node.compIndex, ref index);
         }
     }
     
@@ -192,8 +192,76 @@ public sealed class EntityList : IList<Entity>
     {
         var store = entityStore;
         foreach (var id in Ids) {
-            store.ApplyBatchTo(batch, id);
+            store.ApplyBatchTo(batch, id.Id);
         }
+    }
+    #endregion
+    
+#region sort / filter
+    /// <summary>
+    /// Sort the entities by the component field/property with the given <paramref name="memberName"/>.<br/> 
+    /// </summary>
+    /// <returns>An array containing all entity id and their field/property value.</returns>
+    public ComponentField<TField>[] SortByComponentField<TComponent,TField>(string memberName, SortOrder sortOrder, ComponentField<TField>[] fields = null)
+        where TComponent    : struct, IComponent
+    {
+        return ComponentField<TField>.Sort<TComponent>(this, memberName, sortOrder, fields);
+    }
+    
+    private class IdComparerAsc : IComparer<RawEntity> {
+        public int Compare(RawEntity e1, RawEntity e2) => e1.Id - e2.Id;
+    }
+    
+    private class IdComparerDesc : IComparer<RawEntity> {
+        public int Compare(RawEntity e1, RawEntity e2) => e2.Id - e1.Id;
+    }
+    private static readonly IdComparerAsc  IdAsc = new ();
+    private static readonly IdComparerDesc IdDesc = new ();
+    
+#if NET5_0_OR_GREATER
+    private static readonly Comparison<RawEntity> IsAscComparison  = (e1, e2) => e1.Id - e2.Id;
+    private static readonly Comparison<RawEntity> IsDescComparison = (e1, e2) => e2.Id - e1.Id;
+#endif
+    /// <summary>
+    /// Sort the entities by entity Id.<br/> 
+    /// </summary>
+    public void SortByEntityId(SortOrder sortOrder)
+    {
+        if (sortOrder == SortOrder.None) {
+            return;
+        }
+#if NET5_0_OR_GREATER
+        var span = new Span<RawEntity>(ids, 0, count) ;
+        span.Sort(sortOrder == SortOrder.Ascending ? IsAscComparison : IsDescComparison);
+#else
+        Array.Sort(ids, 0, count, sortOrder == SortOrder.Ascending ? IdAsc : IdDesc);
+#endif
+    }
+    
+    /// <summary>
+    /// Removes all entities not matching the passed filter
+    /// </summary>
+    public void Filter(Func<Entity, bool> filter)
+    {
+        var length      = count;
+        var store       = entityStore;
+        var idsLocal    = ids;
+        var index       = 0;
+        RawEntity rawEntity = default;
+        try {
+            for (int n = 0; n < length; n++)
+            {
+                rawEntity = idsLocal[n];
+                var entity = new Entity(store, rawEntity.Id, rawEntity.Revision);
+                if (filter(entity)) {
+                    idsLocal[index++] = rawEntity;
+                }
+            }
+        }
+        catch (Exception e) {
+            throw new FilterException($"at entity {rawEntity.Id} - {e.GetType().Name}: {e.Message}", e);
+        }
+        count = index;
     }
     #endregion
     
@@ -204,27 +272,52 @@ public sealed class EntityList : IList<Entity>
     /// <summary> Return the entity at the given <paramref name="index"/>.</summary>
     public Entity this[int index]
     {
-        get => new Entity(entityStore, ids[index]);
-        set => ids[index] = value.Id;
+        get => (index >= 0 && index < count) ? new Entity(entityStore, ids[index]) : throw new IndexOutOfRangeException();
+        set => ids[index] = new RawEntity(value.Id, entityStore.nodes[value.Id].revision);
     }
-    /// <summary> not implemented </summary>
-    [ExcludeFromCodeCoverage] public bool Remove  (Entity item)             => throw new NotImplementedException();
-    /// <summary> not implemented </summary>
-    [ExcludeFromCodeCoverage] public int  IndexOf (Entity item)             => throw new NotImplementedException();
-    /// <summary> not implemented </summary>
-    [ExcludeFromCodeCoverage] public void Insert  (int index, Entity item)  => throw new NotImplementedException();
-    /// <summary> not implemented </summary>
-    [ExcludeFromCodeCoverage] public void RemoveAt(int index)               => throw new NotImplementedException();
-    /// <summary> not implemented </summary>
-    [ExcludeFromCodeCoverage] public bool Contains(Entity item)             => throw new NotImplementedException();
+
+    public bool Remove  (Entity item)
+    {
+        var index = IndexOf(item);
+        if (index < 0) {
+            return false;
+        }
+        RemoveAt(index);
+        return true;
+    }
+
+    public int  IndexOf (Entity item) {
+        return Array.IndexOf(ids, item.RawEntity, 0, count);
+    }
+    
+    public bool Contains(Entity item) {
+        return Array.IndexOf(ids, item.RawEntity, 0, count) >= 0;
+    }
+
+    public void Insert  (int index, Entity item) {
+        if (index < 0 || index >= count) throw new IndexOutOfRangeException();
+        if (ids.Length == count) {
+            ResizeIds();
+        }
+        var len = count++ - index;
+        Array.Copy(ids, index, ids, index + 1, len);
+        ids[index] = item.RawEntity;
+    }
+
+    public void RemoveAt(int index) {
+        if (index < 0 || index >= count) throw new IndexOutOfRangeException();
+        var len = --count - index;
+        Array.Copy(ids, index + 1, ids, index, len);
+    }
     
     /// <summary>
     /// Copies the entities of the <see cref="EntityList"/> to an <see cref="Entity"/>[], starting at the given <paramref name="index"/>
     /// </summary>
     public void CopyTo(Entity[] array, int index)
     {
+        var store = entityStore;
         for (int n = 0; n < count; n++) {
-            array[index++] = new Entity(entityStore, ids[n]);
+            array[index++] = new Entity(store, ids[n]);
         }
     }
     #endregion
@@ -249,7 +342,7 @@ public sealed class EntityList : IList<Entity>
 /// </summary>
 public struct EntityListEnumerator : IEnumerator<Entity>
 {
-    private readonly    int[]       ids;        //  8
+    private readonly    RawEntity[] ids;        //  8
     private readonly    EntityStore store;      //  8
     private readonly    int         count;      //  4
     private             int         index;      //  4
@@ -305,3 +398,10 @@ internal sealed class EntityListDebugView
         return result;
     }
 } 
+
+internal class FilterException : Exception
+{
+    internal FilterException(string message, Exception innerException)
+        : base (message, innerException)
+    { }
+}

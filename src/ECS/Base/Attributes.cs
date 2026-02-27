@@ -71,3 +71,61 @@ public sealed class GenericInstanceTypeAttribute : Attribute {
     /// <summary> Register generic component / tag type with three generic parameters. </summary>
     public GenericInstanceTypeAttribute (string componentKey, Type type1, Type type2, Type type3) { }
 }
+
+/// <summary>
+/// The annotated type behaves as a value type.<br/>
+/// Instances of these type can be copied in <see cref="Entity.CopyEntity"/> or <see cref="EntityStore.CloneEntity"/>
+/// without the need of a <c>CopyValue()</c> method.
+/// </summary>
+[AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class)]
+public sealed class BlittableTypeAttribute : Attribute
+{ }
+
+
+#region Friflo ImGui attributes 
+
+[AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
+public class UiTypeDomainAttribute : Attribute
+{ 
+    // ReSharper disable once UnusedParameter.Local
+    public UiTypeDomainAttribute(string style) { }
+}
+
+/// <summary>
+/// Enables changing a number field or property with mouse dragging in EcGui.
+/// </summary>
+[AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
+public class UiDragAttribute : Attribute
+{ 
+    // ReSharper disable once UnusedParameter.Local
+    public UiDragAttribute(float speed = 1, float min = 0, float max= 0, string format = null) { }
+}
+
+/// <summary>
+/// Hides the annotated field or property in EcGui.
+/// </summary>
+[AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
+public class UiHideAttribute : Attribute
+{ }
+
+
+/// <summary>
+/// Defines the layout of a <c>[Flags] enum</c> type in EcGui.<br/>
+/// The size of a group, their spacing and the sort order of flags.
+/// </summary>
+[AttributeUsage(AttributeTargets.Enum)]
+public class UiFlagsAttribute : Attribute
+{
+    public UiFlagsAttribute(int groupSize, bool ascending, int groupSpacing) { }
+}
+
+/// <summary>
+/// Display short name for a <c>[Flags] enum</c> field in EcGui instead its bit index.<br/>
+/// </summary>
+[AttributeUsage(AttributeTargets.Field)]
+public class UiFlagAttribute : Attribute
+{
+    public UiFlagAttribute(string name) { }
+}
+
+#endregion

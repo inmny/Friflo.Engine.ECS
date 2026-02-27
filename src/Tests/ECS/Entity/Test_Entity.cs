@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using Friflo.Engine.ECS;
+using Friflo.Json.Fliox;
 using NUnit.Framework;
 using Tests.ECS.Index;
 using Tests.Utils;
@@ -103,8 +104,6 @@ public static class Test_Entity
         var name = (EntityName)component;
         AreEqual("comp-value", name.value);
     }
-    
-    
 
     [Test]
     public static void Test_Entity_TryGetEntityByPid()
@@ -161,6 +160,11 @@ public static class Test_Entity
             store.GetEntityById(128);
         });
         AreEqual("id: 128. expect in [0, current max id: 127]", e!.Message);
+        
+        var entity2    = store.GetEntityById(2);
+        var entity2Raw = store.GetEntityByRawEntity(entity2.RawEntity);
+        IsFalse(entity2Raw.IsNull);
+        AreEqual(2, entity2Raw.Id);
     }
     
     [Test]
@@ -215,7 +219,7 @@ public static class Test_Entity
         entity.AddTag<TestTag>();
         
         // --- clone entity with blittable components & scripts
-        var clone = store.CloneEntity(entity);
+        var clone = entity.CloneEntity();
         
         AreEqual("Tags: [#TestTag]",            clone.Tags.ToString());
         AreEqual("Components: [EntityName]",    clone.Components.ToString());
@@ -225,13 +229,13 @@ public static class Test_Entity
         
         // --- clone entity with non blittable component
         entity.AddComponent<CopyComponent>();
-        clone = store.CloneEntity(entity);
+        clone = entity.CloneEntity();
         AreEqual("Components: [EntityName, CopyComponent]",    clone.Components.ToString());
         
         // --- clone entity with non blittable script
         entity.RemoveComponent<CopyComponent>();
         entity.AddScript(new NonBlittableScript());
-        clone = store.CloneEntity(entity);
+        clone = entity.CloneEntity();
         
         AreEqual(2,                             clone.Scripts.Length);
         NotNull(clone.GetScript<NonBlittableScript>());
@@ -244,11 +248,35 @@ public static class Test_Entity
         var entity1      = store.CreateEntity();
         
         entity1.AddComponent(new CopyComponent { list = new List<int>{ 1, 2, 3 }});
-        var entity2 = store.CloneEntity(entity1);
+        var entity2 = entity1.CloneEntity();
         var list1 = entity1.GetComponent<CopyComponent>().list;
         var list2 = entity2.GetComponent<CopyComponent>().list;
         AreEqual(list1, list2);
         AreNotSame(list1, list2);
+    }
+    
+    [Test]
+    public static void Test_EntityStore_CloneEntity_with_Unresolved()
+    {
+        var store       = new EntityStore();
+        var entity1      = store.CreateEntity();
+        var unresolved = new Unresolved {
+            tags        = new [] { "TestTag" },
+            components  = new[] {
+                new UnresolvedComponent ("unknown", new JsonValue("{\"value\": 1}"))
+            }
+        };
+        entity1.AddComponent(unresolved);
+        var entity2 = entity1.CloneEntity();
+        var unresolvedClone = entity2.GetComponent<Unresolved>();
+        AreNotSame(unresolved.components,   unresolvedClone.components);
+        AreNotSame(unresolved.tags,         unresolvedClone.tags);
+        //
+        entity1.AddComponent(new Unresolved());
+        var entity3 = entity1.CloneEntity();
+        unresolvedClone = entity3.GetComponent<Unresolved>();
+        IsNull(unresolvedClone.components);
+        IsNull(unresolvedClone.tags);
     }
     
     [Test]
@@ -263,7 +291,7 @@ public static class Test_Entity
         AreEqual(1,         entities.Count);
         AreEqual("{ 1 }",   entities.Debug());
         
-        var clone = store.CloneEntity(entity);
+        var clone = entity.CloneEntity();
         AreEqual(42, clone.GetComponent<IndexedInt>().value);
         entities = index[42];
         AreEqual(2,         entities.Count);
@@ -278,7 +306,7 @@ public static class Test_Entity
         
         entity1.AddComponent(new NonBlittableComponent());
         var e = Throws<MissingMethodException>(() => {
-            store.CloneEntity(entity1);    
+            entity1.CloneEntity();    
         });
         AreEqual("type: Tests.ECS.NonBlittableComponent - expect: static void CopyValue(in NonBlittableComponent source, ref NonBlittableComponent target, in CopyContext context)", e!.Message);
     }
@@ -291,9 +319,22 @@ public static class Test_Entity
         
         entity1.AddScript(new TestScript2());
         var e = Throws<MissingMethodException>(() => {
-            store.CloneEntity(entity1);    
+            entity1.CloneEntity();    
         });
         AreEqual("type: Tests.ECS.TestScript2 - expect: static void CopyScript(TestScript2 source, TestScript2 target)", e!.Message);
+    }
+    
+    [Test]
+    public static void Test_EntityStore_CloneEntity_different_store_exception()
+    {
+        var store   = new EntityStore();
+        var store2  = new EntityStore();
+        var entity  = store.CreateEntity();
+
+        var e = Throws<ArgumentException>(() => {
+            store2.CloneEntity(entity);    
+        });
+        AreEqual("entity is owned by a different store (Parameter 'entity')", e!.Message);
     }
     
     [Test]
@@ -317,6 +358,8 @@ public static class Test_Entity
         var store       = new EntityStore(PidType.RandomPids);
         var entity1     = store.CreateEntity(1);
         var entity2     = store.CreateEntity(2);
+        var entity1obj  = (object)entity1;
+        var entity2obj  = (object)entity2;
         
         // --- operator ==, !=
         IsFalse (entity1 == entity2);
@@ -331,21 +374,58 @@ public static class Test_Entity
         var start = Mem.GetAllocatedBytes();
         Mem.AreEqual (false, entity1.Equals(entity2));
         Mem.AreEqual (true,  entity1.Equals(entity1));
-        Mem.AssertNoAlloc(start);
         
         // --- object.GetHashCode()
-        var e = Throws<NotImplementedException>(() => {
-            _ = entity1.GetHashCode();
-        });
-        AreEqual("to avoid excessive boxing. Use Id or EntityUtils.EqualityComparer. id: 1", e!.Message);
+        Mem.AreEqual(1, entity1.GetHashCode());
         
         // --- object.Equals()
-        e = Throws<NotImplementedException>(() => {
-            object obj = entity1;
-            _ = obj.Equals(entity2);
-        });
-        AreEqual("to avoid excessive boxing. Use == Equals(Entity) or EntityUtils.EqualityComparer. id: 1", e!.Message);
+        Mem.IsFalse(entity1.Equals(null));
+        Mem.IsTrue (entity1.Equals(entity1obj));
+        Mem.IsFalse(entity1.Equals(entity2obj));
+        Mem.AssertNoAlloc(start);
     }
+    
+    [Test]
+    public static void Test_Entity_Dictionary_object()
+    {
+        var store = new EntityStore();
+        var map = new Dictionary<object, int>();
+        map.EnsureCapacity(10);
+        var entity1 = store.CreateEntity(1);
+        var entity2 = store.CreateEntity(2);
+        var entity3 = store.CreateEntity(3);
+        // all subsequent statements cause boxing
+        map.Add(entity1, 1);
+        map.Add(entity2, 2);
+        map.Add(entity3, 3);
+        Mem.AreEqual (2, map[entity2]);
+        Mem.IsTrue(map.ContainsKey(entity2));
+        Mem.IsTrue(map.TryGetValue(entity2, out _));
+    }
+    
+    [Test]
+    public static void Test_Entity_Dictionary_generic()
+    {
+        var store = new EntityStore();
+        var map = new Dictionary<Entity, int>();
+        map.EnsureCapacity(10);
+        var entity1 = store.CreateEntity(1);
+        var entity2 = store.CreateEntity(2);
+        var entity3 = store.CreateEntity(3);
+        map.Add(entity1, 1);                    // force one time allocation
+        _ = map[entity1];                       // force one time allocation
+        _ = map.ContainsKey(entity1);           // force one time allocation
+        _ = map.TryGetValue(entity1, out _);    // force one time allocation
+        
+        var start = Mem.GetAllocatedBytes();    // force one time allocation
+        map.Add(entity2, 2);
+        map.Add(entity3, 3);
+        Mem.AreEqual (2, map[entity2]);
+        Mem.IsTrue(map.ContainsKey(entity2));
+        Mem.IsTrue(map.TryGetValue(entity2, out _));
+        Mem.AssertNoAlloc(start);
+    }
+    
     
     [Test]
     public static void Test_Entity_Enabled()
@@ -445,7 +525,7 @@ public static class Test_Entity
         var entity2 = arch.CreateEntity();
         arch.CreateEntity(11);
         
-        var clone = store.CloneEntity(entity1);
+        var clone = entity1.CloneEntity();
         
         entity1.DeleteEntity();
         entity2.DeleteEntity();

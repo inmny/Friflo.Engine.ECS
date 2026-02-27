@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Numerics;
 using Friflo.Engine.ECS;
@@ -47,6 +48,30 @@ public struct MyComponent6 : IComponent { public int b; }
 [ComponentKey("my7")]
 public struct MyComponent7 : IComponent { public int b; }
 
+public struct MyPropertyComponent : IComponent
+{
+    public int value { private get;  set; } // ensure access to private getter
+}
+
+public struct MyEnumComponent : IComponent {
+    public SortEnum value;
+}
+
+public enum SortEnum
+{
+    Value0,
+    Value1,
+    Value2,
+    Value3,
+    Value4,
+    Value5,
+    Value6,
+    Value7,
+    Value8,
+    Value9,
+}
+
+
 /// <summary>
 /// Component contains a non blittable field typ. This requires a <see cref="CopyValue"/> method.
 /// </summary>
@@ -84,12 +109,40 @@ public struct NonBlittableDictionary    : IComponent { internal Dictionary<int, 
 public struct NonBlittableCycle         : IComponent { internal CycleClass              cycle;  }
 public struct NonBlittableCycle2        : IComponent { internal CycleClass1             cycle1; }
 public struct NonBlittableComponent     : IComponent { internal int[]                   array;  }
+public struct NonBlittableClass         : IComponent { internal object                  obj;    }
 
 public struct BlittableEnum             : IComponent { public BlittableEnumType value;       }
 public struct BlittableDatetime         : IComponent { public DateTime          dateTime;    }
 public struct BlittableGuid             : IComponent { public Guid              guid;        }
 public struct BlittableBigInteger       : IComponent { public BigInteger        bigInteger;  }
 public struct BlittableUri              : IComponent { public Uri               uri;         } // throws exception when serialized
+
+// see immutable types:  https://stackoverflow.com/questions/31721466/examples-of-immutable-types-in-net
+public struct BlittableTypes : IComponent {
+    internal    DateTime                    dateTime;
+    internal    TimeSpan                    timeSpan;
+    internal    DateTimeOffset              dateTimeOffset;
+    internal    string                      str;
+    internal    Type                        type;
+    internal    Version                     version;
+    internal    DBNull                      dbNull;
+    internal    ImmutableArray<int>         immutableArray;
+    internal    Action                      action;
+    internal    BlittableGeneric<object>    blittableGeneric;
+    internal    BlittableClass              blittableClass;
+}
+
+[BlittableType]
+public class BlittableGeneric<T> {
+    public T value; 
+}
+
+[BlittableType]
+public class BlittableClass {
+    public int value; 
+}
+
+
 
 public enum BlittableEnumType
 {
@@ -156,6 +209,11 @@ public struct Component64       : IComponent
     public long  val8;
 }
 
+public struct MemberExceptionComponent : IComponent
+{
+    public int value { get => throw new InvalidOperationException("get"); set => throw new InvalidOperationException("set"); } 
+}
+
 /// <summary>Example shows an extension class to enable component access using less code.</summary>
 public static class MyEntityExtensions
 {
@@ -180,6 +238,16 @@ public struct TestTag3 : ITag { }
 public struct TestTag4 : ITag { }
 
 public struct TestTag5 : ITag { }
+
+public struct TestTag6 : ITag { }
+
+public struct TestTag7 : ITag { }
+
+public struct TestTag8 : ITag { }
+
+public struct TestTag9 : ITag { }
+
+public struct TestTag10 : ITag { }
 
 
 // ------------------------------------------------ scripts

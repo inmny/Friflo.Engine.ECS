@@ -8,6 +8,7 @@ using Friflo.Json.Fliox;
 using Friflo.Json.Fliox.Mapper;
 using Friflo.Json.Fliox.Mapper.Map;
 
+// ReSharper disable UseNullPropagation
 // ReSharper disable StaticMemberInGenericType
 // ReSharper disable once CheckNamespace
 namespace Friflo.Engine.ECS;
@@ -73,26 +74,33 @@ internal sealed class StructHeap<T> : StructHeap, IComponentStash<T>
         targetHeap.components[targetPos] = components[sourcePos];
     }
     
-    /// <remarks>
-    /// Copying a component using an assignment can only be done for <see cref="ComponentType.IsBlittable"/>
-    /// <see cref="ComponentType"/>'s.<br/>
-    /// If not <see cref="ComponentType.IsBlittable"/> serialization must be used.
-    /// </remarks>
-    internal override void CloneComponent(int sourcePos, int targetPos, in CopyContext context)
+    internal override void CopyComponent(int sourcePos, StructHeap targetHeap, int targetPos, in CopyContext context, long updateIndexTypes)
     {
-        var copyValue = CopyValueUtils<T>.CopyValue;
-        ref var source = ref components[sourcePos];
-        ref var target = ref components[targetPos];
+        if (typeof(T) == typeof(TreeNode)) {
+            return;
+        }
+        var copyValue       = CopyValueUtils<T>.CopyValue;
+        ref T source        = ref components[sourcePos];
+        var typedTargetHeap = (StructHeap<T>)targetHeap;
+        ref T target        = ref typedTargetHeap.components[targetPos];
+        if (StructInfo<T>.HasIndex) {
+            AddOrUpdateIndex(source, target, context.target, typedTargetHeap, updateIndexTypes);
+        }
         if (copyValue == null) {
             target = source;
         } else {
             copyValue(source, ref target, context);
         }
-        if (!StructInfo<T>.HasIndex) {
-            return;
+    }
+    
+    private static void AddOrUpdateIndex(in T source, in T target, in Entity targetEntity, StructHeap<T> targetHeap, long updateIndexTypes)
+    {
+        if (((1 << StructInfo<T>.Index) & updateIndexTypes) == 0) {
+            StoreIndex.AddIndex(targetEntity.store, targetEntity.Id, source);
+        } else {
+            targetHeap.componentStash = target;
+            StoreIndex.UpdateIndex(targetEntity.store, targetEntity.Id, source, targetHeap);
         }
-        var targetEntity = context.target;
-        StoreIndex.AddIndex(targetEntity.store, targetEntity.Id, source);
     }
     
     internal override void SetComponent(int compIndex, in IComponent component)
@@ -139,5 +147,38 @@ internal sealed class StructHeap<T> : StructHeap, IComponentStash<T>
     
     internal override  void RemoveIndex (Entity entity) {
         StoreIndex.RemoveIndex(entity.store, entity.Id, this);
+    }
+    
+    internal  override  bool GetComponentMember<TField> (int compIndex, MemberPath memberPath, out TField value, out Exception exception) {
+        var getter = (MemberPathGetter<T, TField>)memberPath.getter;
+        try {
+            exception = null;
+            value = getter(components[compIndex]);
+            return true;
+        }
+        catch (Exception e) {
+            exception = e;
+            value = default;
+            return false;
+        }
+    }
+    
+    internal  override  bool SetComponentMember<TField>(Entity entity, MemberPath memberPath, TField value, Delegate onMemberChanged, out Exception exception)
+    {
+        var setter          = (MemberPathSetter<T, TField>)memberPath.setter;
+        ref var component   = ref components[entity.compIndex];
+        var oldValue        = component;
+        try {
+            exception = null;
+            setter(ref component, value);
+            if (onMemberChanged != null) {
+                ((OnMemberChanged<T>)onMemberChanged)(ref component, entity, memberPath.path, oldValue);
+            }
+            return true;
+        }
+        catch (Exception e) {
+            exception = e;
+            return false;
+        }
     }
 }

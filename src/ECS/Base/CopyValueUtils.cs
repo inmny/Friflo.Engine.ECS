@@ -39,7 +39,7 @@ internal static class CopyValueUtils
         try {
             var genericDelegate = Delegate.CreateDelegate(typeof(CopyValue<TComponent>), method);
             return (CopyValue<TComponent>)genericDelegate;
-        } catch (ArgumentException _) {
+        } catch (ArgumentException) {
             return IncompatibleSignature;
         }
     }

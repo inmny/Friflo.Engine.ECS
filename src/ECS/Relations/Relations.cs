@@ -2,11 +2,14 @@
 // See LICENSE file in the project root for full license information.
 
 
-using System.Collections;
-using System.Collections.Generic;
+using System;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text;
+using Friflo.Engine.ECS.Relations;
+using static System.Diagnostics.DebuggerBrowsableState;
+using Browse = System.Diagnostics.DebuggerBrowsableAttribute;
 
 // ReSharper disable InconsistentNaming
 // ReSharper disable once CheckNamespace
@@ -15,34 +18,53 @@ namespace Friflo.Engine.ECS;
 /// <summary>
 /// Contains the relations of a specific entity returned by <see cref="RelationExtensions.GetRelations{TRelation}"/>.
 /// </summary>
-public readonly struct Relations<TRelation> : IEnumerable<TRelation>
+[DebuggerTypeProxy(typeof(RelationsDebugView<>))]
+public readonly struct Relations<TRelation>
     where TRelation : struct
 {
-    public   override   string          ToString()  => $"Relations<{typeof(TRelation).Name}>[{Length}]";
+    public   override   string                  ToString()  => $"Relations<{typeof(TRelation).Name}>[{Length}]";
     /// <summary>
     /// Return the number of relations.<br/>
     /// Executes in O(1).
     /// </summary>
-    public   readonly   int             Length;     //  4
-    internal readonly   int             start;      //  4
-    internal readonly   int[]           positions;  //  8
-    internal readonly   TRelation[]     components; //  8
-    internal readonly   int             position;   //  4
+    public              int                     Length => GetLength();
     
-    internal Relations(TRelation[] components, int[] positions, int start, int length)
+    internal readonly   int                     length;         //  4
+    internal readonly   int                     start;          //  4
+    internal readonly   int[]                   positions;      //  8
+    internal readonly   TRelation[]             components;     //  8
+    internal readonly   int                     position;       //  4
+    internal readonly   int                     version;        //  4
+    internal readonly   AbstractEntityRelations entityRelations;//  8
+    
+    internal Relations(TRelation[] components, int[] positions, int start, int length, AbstractEntityRelations relations)
     {
-        this.components = components;
-        this.positions  = positions;
-        this.start      = start;
-        Length          = length;
+        this.components     = components;
+        this.positions      = positions;
+        this.start          = start;
+        this.length         = length;
+        entityRelations     = relations;
+        version             = relations.version;
     }
    
-    internal Relations(TRelation[] components, int position) {
-        this.components = components;
-        this.position   = position;
-        Length          = 1;
+    internal Relations(TRelation[] components, int position, AbstractEntityRelations relations) {
+        this.components     = components;
+        this.position       = position;
+        length              = 1;
+        entityRelations     = relations;
+        version             = relations.version;
     }
-
+    
+    internal Relations(AbstractEntityRelations relations) {
+        entityRelations     = relations;
+        version             = relations.version;
+    }
+    
+    private int GetLength() {
+        if (version != entityRelations.version) throw RelationsModifiedException();
+        return length;
+    }
+    
     // ReSharper disable twice StaticMemberInGenericType
     private static readonly bool        isEntity;
     private static readonly MethodInfo  GetRelationKey = MakeGetRelationKey(out isEntity);
@@ -56,7 +78,7 @@ public readonly struct Relations<TRelation> : IEnumerable<TRelation>
     }
     
     internal int GetPosition(int index) {
-        return positions != null ? positions[index] : position;
+        return positions != null ? positions[start + index] : position;
     }
     
     /// <summary>
@@ -85,45 +107,61 @@ public readonly struct Relations<TRelation> : IEnumerable<TRelation>
     /// Return the relation at the given <paramref name="index"/>.<br/>
     /// Executes in O(1).
     /// </summary>
-    public TRelation this[int index] => components[positions != null ? positions[index] : position];
-       
-    // --- IEnumerable<>
-    IEnumerator<TRelation>   IEnumerable<TRelation>.GetEnumerator() => new RelationsEnumerator<TRelation>(this);
+    public ref TRelation this[int index] {
+        get {
+            if (version != entityRelations.version) throw RelationsModifiedException();
+            if (index >= 0 && index < length) {
+                return ref components[positions != null ? positions[start + index] : position];
+            }
+            throw IndexOutOfRangeException(index);
+        }
+    }
     
-    // --- IEnumerable
-    IEnumerator                           IEnumerable.GetEnumerator() => new RelationsEnumerator<TRelation>(this);
+    internal static InvalidOperationException RelationsModifiedException() {
+        var name = typeof(TRelation).Name;
+        return new InvalidOperationException($"Relations<{name}> outdated. Added / Removed relations after calling GetRelations<{name}>().");
+    }
     
+    private IndexOutOfRangeException IndexOutOfRangeException(int index) {
+        return new IndexOutOfRangeException($"index: {index} Length: {length}");
+    }
+
     // --- new
     public RelationsEnumerator<TRelation>            GetEnumerator() => new RelationsEnumerator<TRelation>(this);
 }
 
 
-public struct RelationsEnumerator<TRelation> : IEnumerator<TRelation>
+public struct RelationsEnumerator<TRelation>
     where TRelation : struct
 {
-    private  readonly   int[]           positions;
-    private  readonly   int             position;
-    private  readonly   TRelation[]     components;
-    private  readonly   int             start;
-    private  readonly   int             last;
-    private             int             index;
+    private  readonly   int[]                   positions;
+    private  readonly   int                     position;
+    private  readonly   TRelation[]             components;
+    private  readonly   int                     start;
+    private  readonly   int                     last;
+    private  readonly   int                     version;
+    private  readonly   AbstractEntityRelations entityRelations;
+    private             int                     index;
     
     
     internal RelationsEnumerator(in Relations<TRelation> relations) {
-        positions   = relations.positions;
-        position    = relations.position;
-        components  = relations.components;
-        start       = relations.start - 1;
-        last        = start + relations.Length;
-        index       = start;
+        positions       = relations.positions;
+        position        = relations.position;
+        components      = relations.components;
+        start           = relations.start - 1;
+        last            = start + relations.length;
+        version         = relations.version;
+        entityRelations = relations.entityRelations;
+        index           = start;
     }
     
     // --- IEnumerator<>
-    public readonly TRelation Current   => components[positions != null ? positions[index] : position];
+    public readonly ref TRelation Current   => ref components[positions != null ? positions[index] : position];
     
     // --- IEnumerator
     public bool MoveNext() {
         if (index < last) {
+            if (version != entityRelations.version) throw Relations<TRelation>.RelationsModifiedException();
             index++;
             return true;
         }
@@ -134,8 +172,31 @@ public struct RelationsEnumerator<TRelation> : IEnumerator<TRelation>
         index = start;
     }
     
-    object IEnumerator.Current => Current;
-
     // --- IDisposable
     public void Dispose() { }
+}
+
+internal class RelationsDebugView<TRelation> 
+    where TRelation : struct
+{
+    [Browse(RootHidden)]
+    public              TRelation[]        Relations => GetRelations();
+    
+    [Browse(Never)]
+    private readonly    Relations<TRelation> relations;
+        
+    internal RelationsDebugView(Relations<TRelation> relations)
+    {
+        this.relations = relations;
+    }
+    
+    private TRelation[] GetRelations()
+    {
+        var array = new TRelation[relations.Length];
+        int n = 0; 
+        foreach (var relation in relations) {
+            array[n++] = relation;
+        }
+        return array;
+    }
 }

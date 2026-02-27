@@ -1,4 +1,4 @@
-﻿// Copyright (c) Ullrich Praetz - https://github.com/friflo. All rights reserved.
+// Copyright (c) Ullrich Praetz - https://github.com/friflo. All rights reserved.
 // See LICENSE file in the project root for full license information.
 
 using System;
@@ -82,8 +82,13 @@ internal sealed class AssemblyLoader
         if (!checkedAssemblies.Add(assembly)) {
             return;
         }
-        // if (assembly.FullName.Contains("Tests,"))           { int i = 3; }
-        // if (assembly.FullName.Contains("Tests-internal,"))  { int i = 3; }
+        var assemblyName= assembly.GetName().Name;
+        if (assemblyName != null && AssemblyLoaderUtils.SystemAssemblyNames.Contains(assemblyName)) {
+            checkedAssemblies.Add(assembly);
+            return;
+        }
+        // Console.WriteLine(assemblyName);
+
         var referencedAssemblies = assembly.GetReferencedAssemblies();
         foreach (var referencedAssemblyName in referencedAssemblies)
         {
@@ -101,6 +106,9 @@ internal sealed class AssemblyLoader
     [ExcludeFromCodeCoverage] // running tests without debugging load all assemblies successful
     private void CheckReferencedAssembly(AssemblyName assemblyName)
     {
+        if (AssemblyLoaderUtils.SystemAssemblyNames.Contains(assemblyName.Name)) {
+            return;
+        }
         var referencedAssembly = LoadAssembly(assemblyName);
         if (referencedAssembly == null) {
             return; // case not reached in unit tests. Can be reached when using a debugger
@@ -172,7 +180,7 @@ internal sealed class AssemblyLoader
                     continue;
                 }
             }
-            if (isClass && type.IsSubclassOf(typeof(Script))) {
+            if (isClass && !type.IsAbstract && type.IsSubclassOf(typeof(Script))) {
                 componentTypes.Add(new AssemblyType(type, SchemaTypeKind.Script, assemblyIndex));
             }
         }

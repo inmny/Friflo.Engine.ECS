@@ -1,4 +1,5 @@
-﻿using Friflo.Engine.ECS;
+﻿using System;
+using Friflo.Engine.ECS;
 using NUnit.Framework;
 using static NUnit.Framework.Assert;
 
@@ -176,6 +177,44 @@ public static class Test_Index_Delete
         
         entity3.DeleteEntity();
         AreEqual("{ }",         values.Debug());
+    }
+    
+    [Test]
+    public static void Test_Index_DeleteEntity_Entity() {
+        var store   = new EntityStore();
+        var root    = store.CreateEntity(1);
+        var entity2 = store.CreateEntity(2);
+        var entity3 = store.CreateEntity(3);
+        var child   = store.CreateEntity(new AttackComponent { target = entity2 });
+        child.GetComponent<AttackComponent>().target = entity3;   // causes subsequent exception. The indexed value MUST never be changed
+        root.AddChild(child);
+        var e = Throws<InvalidOperationException>(() => {
+            child.DeleteEntity();    
+        });
+        AreEqual("Indexed value of 'AttackComponent' not found. Reason: indexed values MUST NOT be changed. See: https://friflo.gitbook.io/friflo.engine.ecs/documentation/component-index#indexed-components", e!.Message);
+    }
+    
+    [Test]
+    public static void Test_Index_DeleteEntity_struct() {
+        var store   = new EntityStore();
+        var entity  = store.CreateEntity(new IndexedInt { value = 1 });
+        entity.GetComponent<IndexedInt>().value = 2;   // causes subsequent exception. The indexed value MUST never be changed
+
+        var e = Throws<InvalidOperationException>(() => {
+            entity.DeleteEntity();    
+        });
+        AreEqual("Indexed value of 'IndexedInt' not found. Reason: indexed values MUST NOT be changed. See: https://friflo.gitbook.io/friflo.engine.ecs/documentation/component-index#indexed-components", e!.Message);
+    }
+    
+    [Test]
+    public static void Test_Index_DeleteEntity_class() {
+        var store   = new EntityStore();
+        var entity  = store.CreateEntity(new IndexedName { name = "abc" });
+        entity.GetComponent<IndexedName>().name = "xyz";   // causes subsequent exception. The indexed value MUST never be changed
+        var e = Throws<InvalidOperationException>(() => {
+            entity.DeleteEntity();    
+        });
+        AreEqual("Indexed value of 'IndexedName' not found. Reason: indexed values MUST NOT be changed. See: https://friflo.gitbook.io/friflo.engine.ecs/documentation/component-index#indexed-components", e!.Message);
     }
 }
 

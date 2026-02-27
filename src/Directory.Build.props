@@ -3,4 +3,7 @@
     <!-- Renamed default output folders obj to .obj to avoid importing them by Unity -->
     <BaseIntermediateOutputPath>.obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
   </PropertyGroup>  
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
+    <DefineConstants>NET48</DefineConstants>
+  </PropertyGroup>
 </Project>

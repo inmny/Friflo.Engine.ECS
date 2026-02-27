@@ -124,7 +124,50 @@ public static class Test_Relations
         IsFalse (entity.RemoveRelation<AttackRelation>(default));
         relations = entity.GetRelations<AttackRelation>();
         AreEqual("{ }", relations.Debug());
-    }    
+    }
+    
+    [Test]
+    public static void Test_Relations_modify_relations()
+    {
+        var store   = new EntityStore();
+        var target1 = store.CreateEntity();
+        var target2 = store.CreateEntity();
+        var entity  = store.CreateEntity();
+        var relations = entity.GetRelations<AttackRelation>();
+        Throws<IndexOutOfRangeException>(() => {
+            _ = relations[0];
+        });
+        // --- add first relation
+        IsTrue  (entity.AddRelation(new AttackRelation { target = target1, speed = 1 }));
+        relations = entity.GetRelations<AttackRelation>();
+        AreEqual("{ 1 }", relations.Debug());
+        relations[0].speed = 11;
+        AreEqual(11, entity.GetRelation<AttackRelation, Entity>(target1).speed);
+        var e = Throws<IndexOutOfRangeException>(() => {
+            _ = relations[1];
+        });
+        AreEqual("index: 1 Length: 1", e!.Message);
+        
+        // --- add second relation
+        IsTrue  (entity.AddRelation(new AttackRelation { target = target2, speed = 2 }));
+        relations = entity.GetRelations<AttackRelation>();
+        AreEqual("{ 1, 2 }", relations.Debug());
+        relations[0].speed = 21;
+        relations[1].speed = 22;
+        AreEqual(21, entity.GetRelation<AttackRelation, Entity>(target1).speed);
+        AreEqual(22, entity.GetRelation<AttackRelation, Entity>(target2).speed);
+        Throws<IndexOutOfRangeException>(() => {
+            _ = relations[2];
+        });
+        
+        // --- modify relation using foreach 
+        int speed = 30;
+        foreach (ref var relation in relations) {
+            relation.speed = ++speed;
+        }
+        AreEqual(31, entity.GetRelation<AttackRelation, Entity>(target1).speed);
+        AreEqual(32, entity.GetRelation<AttackRelation, Entity>(target2).speed);
+    }
     
 #pragma warning disable CS0618 // Type or member is obsolete
     [Test]
@@ -138,10 +181,12 @@ public static class Test_Relations
         var components = entity.Components;
         entity.AddComponent(new Position());
         AreEqual(1, components.Count);
+        AreEqual(0, EntityUtils.GetRelationTypes(entity).Count);
 
         entity.AddRelation(new AttackRelation { target = target10, speed = 20 });
         AreEqual("Components: [Position] +1 relations", components.ToString());
         AreEqual(2, components.Count);
+        AreEqual(1, EntityUtils.GetRelationTypes(entity).Count);
         int count = 0;
         foreach (var component in components) {
             switch (count++) {
@@ -158,6 +203,7 @@ public static class Test_Relations
         entity.AddRelation(new AttackRelation { target = target11, speed = 21 });
         AreEqual("Components: [Position] +2 relations", components.ToString());
         AreEqual(3, components.Count);
+        AreEqual(1, EntityUtils.GetRelationTypes(entity).Count);
         count = 0;
         foreach (var component in components) {
             switch (count++) {
@@ -188,11 +234,7 @@ public static class Test_Relations
         entity.AddRelation(new AttackRelation { target = target11, speed = 21 });
         
         var relations = entity.GetRelations<AttackRelation>();
-        
-        // --- IEnumerable<>
-        IEnumerable<AttackRelation> enumerable = relations;
-        var enumerator = enumerable.GetEnumerator();
-        using var enumerator1 = enumerator as IDisposable;
+        var enumerator = relations.GetEnumerator();
         int count = 0;
         while (enumerator.MoveNext()) {
             count++;
@@ -205,22 +247,6 @@ public static class Test_Relations
             count++;
         }
         AreEqual(2, count);
-        
-        // --- IEnumerable
-        IEnumerable enumerable2 = relations;
-        count = 0;
-        foreach (var relation in enumerable2) {
-            count++;
-        }
-        AreEqual(2, count);
-        
-        var entity2  = store.CreateEntity(2);
-        enumerable2  = entity2.GetRelations<AttackRelation>();
-        count = 0;
-        foreach (var relation in enumerable2) {
-            count++;
-        }
-        AreEqual(0, count);
     }
     
     [Test]
@@ -326,12 +352,14 @@ public static class Test_Relations
                 Mem.IsTrue(entity.AddRelation(new IntRelation{ value = n }));
             }
             Mem.AreEqual(relationCount, entity.Components.Count);
+            Mem.AreEqual(1, EntityUtils.GetRelationTypes(entity).Count);
         }
         foreach (var entity in entities) {
             for (int n = 0; n < relationCount; n++) {
                 Mem.IsTrue(entity.RemoveRelation<IntRelation, int>(n));
             }
             Mem.AreEqual(0, entity.Components.Count);
+            Mem.AreEqual(0, EntityUtils.GetRelationTypes(entity).Count);
         }
         Mem.AssertNoAlloc(start);
     }
@@ -431,6 +459,142 @@ public static class Test_Relations
             entity.AddRelation(new AttackRelation());
         });
         AreEqual(expect, nre!.Message);
+    }
+    
+    [Test]
+    // Issue:   Relations<TRelation> [index] operator sometimes returns the wrong TRelation
+    //          https://github.com/friflo/Friflo.Engine.ECS/issues/70
+    //
+    // When adding / removing relations all Relations<> instances of that relation type get outdated.
+    // 
+    // To prevent using outdated Relations<> instances Friflo.Engine.ECS 3.4.0 (or higher) now throws:   
+    //
+    // InvalidOperationException : Relations<IntRelation> outdated. Added / Removed relations after calling GetRelations<IntRelation>().
+
+    public static void Test_Relations_outdated_remove_relation()
+    {
+    /*
+        struct IntRelation : IRelation<int>
+        {
+            public          int     value;
+            public          int     GetRelationKey()    => value;
+
+            public override string  ToString()          => value.ToString();
+        }
+    */
+        var store = new EntityStore();
+
+        var entity = store.CreateEntity();
+        entity.AddRelation(new IntRelation { value = 10 });
+
+        Relations<IntRelation> relations = entity.GetRelations<IntRelation>();
+        
+        var r0 = relations[0];                  // OK
+        AreEqual(10, r0.value);
+
+        foreach (var r in relations) { }        // OK
+        
+        var length = relations.Length;          // OK
+        AreEqual(1, length);
+        
+        entity.RemoveRelation<IntRelation,int>(10);         // <-- invalidate Relations<IntRelation> instances
+        entity.AddRelation(new IntRelation { value = 12} ); // <-- invalidate Relations<IntRelation> instances
+        
+        
+        var e1 = Throws<InvalidOperationException>(() => {
+            var r = relations[0];               // not OK. relations outdated 
+        });
+        AreEqual("Relations<IntRelation> outdated. Added / Removed relations after calling GetRelations<IntRelation>().", e1!.Message);
+        
+        var e2 = Throws<InvalidOperationException>(() => {
+            foreach (var r in relations) { }    // not OK. relations outdated 
+        });
+        AreEqual("Relations<IntRelation> outdated. Added / Removed relations after calling GetRelations<IntRelation>().", e2!.Message);
+        
+        var e3 = Throws<InvalidOperationException>(() => {
+            _ = relations.Length;               // not OK. relations outdated 
+        });
+        AreEqual("Relations<IntRelation> outdated. Added / Removed relations after calling GetRelations<IntRelation>().", e3!.Message);
+        
+        var e4 = Throws<InvalidOperationException>(() => {
+            _ = relations.ToString();           // not OK. relations outdated 
+        });
+        AreEqual("Relations<IntRelation> outdated. Added / Removed relations after calling GetRelations<IntRelation>().", e4!.Message);
+    }
+    
+    [Test]
+    public static void Test_Relations_outdated_DeleteEntity_target()
+    {
+        var store = new EntityStore();
+
+        var source = store.CreateEntity();
+        var target = store.CreateEntity();
+        source.AddRelation(new AttackRelation { target = target });
+        var relations = source.GetRelations<AttackRelation>();
+        _ = relations.Length;       // OK
+        
+        target.DeleteEntity();
+        var e1 = Throws<InvalidOperationException>(() => {
+            _ = relations.Length;   // NOK
+        });
+        AreEqual("Relations<AttackRelation> outdated. Added / Removed relations after calling GetRelations<AttackRelation>().", e1!.Message);
+    }
+    
+    [Test]
+    public static void Test_Relations_outdated_DeleteEntity_source()
+    {
+        var store = new EntityStore();
+
+        var source = store.CreateEntity();
+        var target = store.CreateEntity();
+        source.AddRelation(new AttackRelation { target = target });
+        var relations = source.GetRelations<AttackRelation>();
+        _ = relations.Length;       // OK
+        
+        source.DeleteEntity();
+        var e1 = Throws<InvalidOperationException>(() => {
+            _ = relations.Length;   // NOK
+        });
+        AreEqual("Relations<AttackRelation> outdated. Added / Removed relations after calling GetRelations<AttackRelation>().", e1!.Message);
+    }
+    
+    [Test]
+    // Regression test for issue in Relations<> indexer (missed to use start)
+    // Issue detected at:   [Relations<TRelation> [index] operator sometimes returns the wrong TRelation]
+    //                      https://github.com/friflo/Friflo.Engine.ECS/issues/70#issuecomment-2896790850
+    public static void Test_Relations_indexer()
+    {
+        var store = new EntityStore();
+
+        var entity1 = store.CreateEntity();
+        entity1.AddRelation(new IntRelation { value = 10 });
+        entity1.AddRelation(new IntRelation { value = 11 });
+        entity1.AddRelation(new IntRelation { value = 12 });
+        entity1.AddRelation(new IntRelation { value = 13 });
+        
+        var entity2 = store.CreateEntity();
+        entity2.AddRelation(new IntRelation { value = 20 });
+        entity2.AddRelation(new IntRelation { value = 21 });
+        entity2.AddRelation(new IntRelation { value = 22 });
+        entity2.AddRelation(new IntRelation { value = 23 });
+
+        var relations1 = entity1.GetRelations<IntRelation>();
+        var relations2 = entity2.GetRelations<IntRelation>();
+        
+        // Both relations must have same length for this test.
+        // So they are using the same Relations<TRelation>.positions with different Relations<TRelation>.start values
+        AreEqual(relations1.Length, relations2.Length); 
+        {
+            int index = 0;
+            foreach (var relation in relations1) {
+                AreEqual(relations1[index++].value, relation.value);
+            }
+        } {
+            int index = 0;
+            foreach (var relation in relations2) {
+                AreEqual(relations2[index++].value, relation.value);
+            }
+        }
     }
 }
 

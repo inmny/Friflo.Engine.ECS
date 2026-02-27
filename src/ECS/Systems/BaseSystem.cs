@@ -122,8 +122,11 @@ public abstract class BaseSystem
     #endregion
 
 #region virtual - store: add / remove
-    protected internal virtual  void OnRemoveStore(EntityStore store) { }
-    protected internal virtual  void OnAddStore   (EntityStore store) { }
+    internal  virtual  void AddStoreInternal   (EntityStore store) => OnAddStore(store);
+    internal  virtual  void RemoveStoreInternal(EntityStore store) => OnRemoveStore(store);
+    
+    protected virtual  void OnAddStore   (EntityStore store) { }
+    protected virtual  void OnRemoveStore(EntityStore store) { }
     #endregion
     
 #region virtual - system: update
@@ -207,7 +210,7 @@ public abstract class BaseSystem
             system.systemRoot = newRoot;
             newRoot.AddSystemToRoot(system);
             foreach (var store in newRoot.stores) {
-                system.OnAddStore(store);
+                system.AddStoreInternal(store);
             }
         }
     }
@@ -225,21 +228,21 @@ public abstract class BaseSystem
             system.systemRoot = null;
             currentRoot.RemoveSystemFromRoot(system);
             foreach (var store in currentRoot.stores) {
-                system.OnRemoveStore(store);
+                system.RemoveStoreInternal(store);
             }
         }
     }
     #endregion
     
 #region get systems of systems sub tree
-    internal ReadOnlyList<BaseSystem> GetSubSystems(ref ReadOnlyList<BaseSystem> systemBuffer)
+    internal ReadOnlyList<BaseSystem>.Mutate GetSubSystems(ref ReadOnlyList<BaseSystem>.Mutate systemBuffer)
     {
         systemBuffer.Clear();
         AddSubSystems(ref systemBuffer, this);
         return systemBuffer;
     }
     
-    private static void AddSubSystems(ref ReadOnlyList<BaseSystem> readOnlyList, BaseSystem system)
+    private static void AddSubSystems(ref ReadOnlyList<BaseSystem>.Mutate readOnlyList, BaseSystem system)
     {
         readOnlyList.Add(system);
         if (system is SystemGroup systemGroup) {
@@ -251,14 +254,17 @@ public abstract class BaseSystem
     #endregion
     
 #region perf
+    private const int DefaultNameColLen = 30;
+    
     /// <summary>
     /// Returns performance statistics formatted as a table intended for logging.
     /// </summary>
-    public string GetPerfLog()
+    public string GetPerfLog(int nameColLen = 0)
     {
+        nameColLen = nameColLen <= 0 ? DefaultNameColLen : nameColLen;
         var sb = stringBuffer ??= new StringBuilder();
         sb.Clear();
-        AppendPerfLog (sb);
+        AppendPerfLog (sb, nameColLen);
         return sb.ToString();
     }
     
@@ -266,19 +272,24 @@ public abstract class BaseSystem
     /// <summary>
     /// Add performance statistics formatted as a table to the given <see cref="StringBuilder"/> without memory allocations.
     /// </summary>
-    public void AppendPerfLog(StringBuilder stringBuilder) {
-        var stores  = SystemRoot?.stores.count ?? 0;
-        stringBuilder.Append($"stores: {stores,-3}");
-        stringBuilder.Append(' ', pre_length - 11);
-        stringBuilder.Append("E M      last ms       sum ms      updates     last mem      sum mem     entities\n");
-        stringBuilder.Append('-', 11);
-        stringBuilder.Append(' ', pre_length-11);
-        stringBuilder.Append("---     --------     --------     --------     --------     --------     --------\n");
-        AppendPerfStats(stringBuilder, 0);
-        stringBuilder.Replace(',', '.'); // no more patience with NumberFormatInfo
+    public void AppendPerfLog(StringBuilder sb, int nameColLen = 0)
+    {
+        nameColLen = nameColLen <= 0 ? DefaultNameColLen : nameColLen;
+        var stores  = SystemRoot?.stores.Count ?? 0;
+        var start = sb.Length;
+        sb.Append($"stores: {stores,-3} ");
+        var len = nameColLen - (sb.Length - start);
+        if (len > 0) {
+            sb.Append(' ', len);    
+        }
+        sb.Append("E M      last ms       sum ms      updates     last mem      sum mem     entities\n");
+        sb.Append('-', nameColLen - 1);
+        sb.Append(" ---     --------     --------     --------     --------     --------     --------\n");
+        AppendPerfStats(sb, 0, nameColLen);
+        sb.Replace(',', '.'); // no more patience with NumberFormatInfo
     }
 
-    internal virtual void AppendPerfStats(StringBuilder sb, int depth)
+    internal virtual void AppendPerfStats(StringBuilder sb, int depth, int nameColLen)
     {
         var start = sb.Length;
         if (depth > 0) {
@@ -299,8 +310,13 @@ public abstract class BaseSystem
         } else {
             monitored = parentGroup?.MonitorPerf ?? false;
         }
-        var len = Math.Max(0, pre_length - (sb.Length - start));
-        sb.Append(' ', len);
+        var len = nameColLen - (sb.Length - start) - 1; // -1 for additional ' '
+        if (len > 0) {
+            sb.Append(' ', len);    
+        } else {
+            sb.Length += len; // truncate if too long   
+        }
+        sb.Append(' ');
         sb.Append(enabled   ? "+ " : "- ");
         sb.Append(monitored ? "m" : " ");
         sb.Append($" {(double)Perf.LastMs,12:0.000}"); // (double) prevents allocation

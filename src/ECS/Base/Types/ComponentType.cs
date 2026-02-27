@@ -16,7 +16,7 @@ namespace Friflo.Engine.ECS;
 /// <summary>
 /// Provide meta data for an <see cref="IComponent"/> struct.
 /// </summary>
-public abstract class ComponentType : SchemaType
+public abstract class ComponentType : SchemaType, IComparable<ComponentType>
 {
 #region fields
     /// <summary> The index in <see cref="EntitySchema"/>.<see cref="EntitySchema.Components"/>. </summary>
@@ -32,7 +32,9 @@ public abstract class ComponentType : SchemaType
     
     internal readonly   Type        RelationType;   //  8
     
-    internal readonly   Type        RelationKeyType;//  8
+    public   readonly   Type        RelationKeyType;//  8
+    
+    internal            int         nameSortOrder;  //  4
     #endregion
 
 #region methods
@@ -52,7 +54,7 @@ public abstract class ComponentType : SchemaType
         : base (componentKey, type, Component)
     {
         StructIndex     = structIndex;
-        IsBlittable     = GetBlittableType(type) == BlittableType.Blittable;
+        IsBlittable     = GetBlittableType(type, true) == BlittableType.Blittable;
         StructSize      = byteSize;
         IndexType       = indexType;
         IndexValueType  = indexValueType;
@@ -60,6 +62,10 @@ public abstract class ComponentType : SchemaType
         RelationKeyType = keyType;
     }
     #endregion
+
+    public int CompareTo(ComponentType other) {
+        return nameSortOrder - other.nameSortOrder;
+    }
 }
 
 internal static class StructInfo<T>
@@ -92,7 +98,7 @@ internal sealed class ComponentType<T> : ComponentType
     }
     
     internal override bool AddEntityComponent(Entity entity) {
-        return entity.AddComponent<T>(default);
+        return entity.AddComponent(new T());
     }
     
     internal override bool AddEntityComponentValue(Entity entity, object value) {
@@ -148,8 +154,7 @@ internal sealed class RelationType<T> : ComponentType
             } else {
                 writer.writer.json.AppendChar(',');
             }
-            var index = relations.start + n;
-            var position = relations.GetPosition(index);
+            var position = relations.GetPosition(n);
             var bytes = heap!.Write(writer.componentWriter, position);
             writer.writer.json.AppendBytes(bytes);
         }

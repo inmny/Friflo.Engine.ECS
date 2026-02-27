@@ -1,6 +1,12 @@
-using Friflo.Engine.ECS;using Friflo.Engine.ECS.Predefined;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Friflo.Engine.ECS;
+using Friflo.Engine.ECS.Predefined;
 using NUnit.Framework;
+using Tests.ECS.Index;
 using Tests.ECS.Relations;
+using Tests.Examples;
 using static NUnit.Framework.Assert;
 
 // ReSharper disable InconsistentNaming
@@ -11,7 +17,7 @@ public static class Test_ComponentSchema
     [Test]
     public static void Test_EntityTags() {
         var schema      = EntityStore.GetEntitySchema();
-        AreEqual(17,     schema.Tags.Length);
+        AreEqual(23,     schema.Tags.Length);
         
         var tags = schema.Tags;
         IsNull(tags[0]);
@@ -21,8 +27,8 @@ public static class Test_ComponentSchema
             AreEqual(SchemaTypeKind.Tag, type.Kind);
             IsNull  (type.ComponentKey);
         }
-        AreEqual(16,                     schema.TagTypeByType.Count);
-        AreEqual(15,                     schema.TagTypeByName.Count);
+        AreEqual(22,                     schema.TagTypeByType.Count);
+        AreEqual(21,                     schema.TagTypeByName.Count);
         {
             var testTagType = schema.TagTypeByType[typeof(TestTag)];
             AreEqual(typeof(TestTag),       testTagType.Type);
@@ -49,12 +55,14 @@ public static class Test_ComponentSchema
         var components  = schema.Components;
         var scripts     = schema.Scripts;
         
-        AreEqual("components: 73  scripts: 10  entity tags: 16", schema.ToString());
-        AreEqual(74,    components.Length);
+        AreEqual("components: 79  scripts: 10  entity tags: 22", schema.ToString());
+        AreEqual(80,    components.Length);
         AreEqual(11,    scripts.Length);
         
-        AreEqual(79,    schema.SchemaTypeByKey.Count);
-        AreEqual(73,    schema.ComponentTypeByType.Count);
+        AreEqual(85,    schema.SchemaTypeByKey.Count);
+        AreEqual(79,    schema.ComponentTypeByType.Count);
+        AreEqual(72,    schema.ComponentTypes.Count);
+        AreEqual( 7,    schema.RelationTypes.Count);
         AreEqual(10,    schema.ScriptTypeByType.Count);
         
         IsNull(components[0]);
@@ -99,6 +107,7 @@ public static class Test_ComponentSchema
         AssertBlittableComponent<BlittableGuid>         (schema, true);
         AssertBlittableComponent<BlittableBigInteger>   (schema, true);
         AssertBlittableComponent<BlittableUri>          (schema, true);
+        AssertBlittableComponent<BlittableTypes>        (schema, true);
         
         
         // --- Test blittable types
@@ -110,6 +119,22 @@ public static class Test_ComponentSchema
         AssertBlittableComponent<NonBlittableArray>     (schema, false);
         AssertBlittableComponent<NonBlittableList>      (schema, false);
         AssertBlittableComponent<NonBlittableDictionary>(schema, false);
+        AssertBlittableComponent<NonBlittableCycle>     (schema, false);
+        AssertBlittableComponent<NonBlittableCycle2>    (schema, false);
+        AssertBlittableComponent<NonBlittableComponent> (schema, false);
+        AssertBlittableComponent<NonBlittableClass>     (schema, false);
+    }
+    
+    [Test]
+    public static void Test_ComponentTypes_CopyComponent()
+    {
+        var c1 = EntityUtils.CopyComponent(new MyComponent1{ a = 55 }, default, default); // blittable component
+        AreEqual(55, c1.a);
+        
+        var list1 = new List<int> { 20 };
+        var c2 = EntityUtils.CopyComponent(new CopyComponent{ list = list1 }, default, default); // non blittable component
+        list1[0] = 30;              // changing the list has no effect on the copied component.
+        AreEqual(20, c2.list[0]);   // still 20
     }
     
     [Test]
@@ -191,6 +216,26 @@ public static class Test_ComponentSchema
         AreEqual("test",            schema.ScriptTypeByType[typeof(TestComponent)].ComponentKey);
         
         AssertBlittableScript<TestComponent>(schema, true);
+    }
+    
+    [Test]
+    public static void Test_ComponentTypes_Sorting()
+    {
+        var schema      = EntityStore.GetEntitySchema();
+        var components = schema.ComponentTypeByType.Values.ToArray();
+        Array.Sort(components);
+        IsTrue(components[0].Type   == typeof(AttackComponent));
+        IsTrue(components[^1].Type  == typeof(Velocity));
+    }
+    
+    [Test]
+    public static void Test_Tags_Sorting()
+    {
+        var schema  = EntityStore.GetEntitySchema();
+        var tags    = schema.TagTypeByType.Values.ToArray();
+        Array.Sort(tags);
+        IsTrue(tags[0].Type   == typeof(ExampleECS.Cat));
+        IsTrue(tags[^1].Type  == typeof(TestTag9));
     }
 }
 

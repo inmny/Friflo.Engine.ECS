@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using Friflo.Engine.ECS.Collections;
 
 // ReSharper disable MemberCanBeProtected.Global
@@ -12,11 +13,15 @@ using Friflo.Engine.ECS.Collections;
 // ReSharper disable once CheckNamespace
 namespace Friflo.Engine.ECS.Relations;
 
+internal delegate AbstractEntityRelations CreateEntityRelations(ComponentType componentType, Archetype archetype, StructHeap heap);
+
 internal abstract class AbstractEntityRelations
 {
+    internal            int                         version;
     internal            int                         Count       => archetype.Count;
     public    override  string                      ToString()  => $"relation count: {archetype.Count}";
 
+    internal static readonly Dictionary<Type, CreateEntityRelations> CreateEntityRelationsNativeAot = new ();
 #region fields
     /// Single <see cref="Archetype"/> containing all relations of a specific <see cref="IRelation{TKey}"/>
     internal  readonly  Archetype                   archetype;
@@ -47,7 +52,7 @@ internal abstract class AbstractEntityRelations
         relationBit     = (int)types.bitSet.l0;
     }
     
-    internal  abstract bool                 AddComponent<TRelation>      (int id, in TRelation component) where TRelation : struct, IRelation;
+    internal  abstract bool                 AddRelation<TRelation>       (int id, in TRelation relation) where TRelation : struct, IRelation;
     internal  abstract IRelation            GetRelationAt                (int id, int index);
     internal  virtual  ref TRelation        GetEntityRelation<TRelation >(int id, int target)              where TRelation  : struct   => throw new InvalidOperationException($"type: {GetType().Name}");
     internal  virtual  void                 AddIncomingRelations         (int target, List<EntityLink> result)                         => throw new InvalidOperationException($"type: {GetType().Name}");
@@ -58,7 +63,6 @@ internal abstract class AbstractEntityRelations
         return new KeyNotFoundException($"relation not found. key '{key}' id: {id}");        
     }
     
-    [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2077", Justification = "TODO")] // TODO
     internal static AbstractEntityRelations GetEntityRelations(EntityStoreBase store, int structIndex)
     {
         var relationsMap    = ((EntityStore)store).extension.relationsMap ??= CreateRelationsMap();
@@ -67,12 +71,32 @@ internal abstract class AbstractEntityRelations
             return relations;
         }
         var componentType   = EntityStoreBase.Static.EntitySchema.components[structIndex];
-        var heap            = componentType.CreateHeap();
-        var config          = EntityStoreBase.GetArchetypeConfig(store);
-        var archetype       = new Archetype(config, heap);
-        var obj             = Activator.CreateInstance(componentType.RelationType, componentType, archetype, heap);
-        return relationsMap[structIndex] = (AbstractEntityRelations)obj;
-        //  return store.relationsMap[structIndex] = new RelationArchetype<TRelation, TKey>(archetype, heap);
+        return relationsMap[structIndex] = CreateEntityRelations(store, componentType);
+    }
+
+    /// Call constructors of<br/>
+    /// <see cref="GenericEntityRelations{TRelation,TKey}"/>
+    /// <see cref="EntityLinkRelations{TRelation}"/>
+    [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2080", Justification = "TODO")] // TODO
+    private static AbstractEntityRelations CreateEntityRelations(EntityStoreBase store, ComponentType componentType)
+    {
+        var heap        = componentType.CreateHeap();
+        var config      = EntityStoreBase.GetArchetypeConfig(store);
+        var archetype   = new Archetype(config, heap);
+        
+        var flags       = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.CreateInstance;
+        var paramTypes  = new [] { typeof(ComponentType), typeof(Archetype), typeof(StructHeap) };
+        var constructor = componentType.RelationType.GetConstructor(flags, null, paramTypes, null);
+        if (constructor == null) {
+            // constructor is null in Native AOT
+            if (!CreateEntityRelationsNativeAot.TryGetValue(componentType.Type, out var create)) {
+                throw new InvalidOperationException($"Native AOT requires registration of IRelation with aot.RegisterRelation(). type: {componentType.Type}.");   
+            }
+            return create(componentType, archetype, heap);
+        }
+        var args        = new object[] { componentType, archetype, heap };
+        var obj         = constructor.Invoke(args);
+        return (AbstractEntityRelations)obj;
     }
     
     private static AbstractEntityRelations[] CreateRelationsMap() {
@@ -90,19 +114,16 @@ internal abstract class AbstractEntityRelations
     internal static Relations<TRelation> GetRelations<TRelation>(EntityStore store, int id)
         where TRelation : struct, IRelation
     {
-        var relations = store.extension.relationsMap?[StructInfo<TRelation>.Index];
-        if (relations == null) {
-            return default;
-        }
+        var relations = GetEntityRelations(store, StructInfo<TRelation>.Index);
         relations.positionMap.TryGetValue(id, out var positions);
         int count       = positions.count;
         var components  = ((StructHeap<TRelation>)relations.heap).components;
         switch (count) {
-            case 0: return  new Relations<TRelation>();
-            case 1: return  new Relations<TRelation>(components, positions.start);
+            case 0: return  new Relations<TRelation>(relations);
+            case 1: return  new Relations<TRelation>(components, positions.start, relations);
         }
         var poolPositions = IdArrayPool.GetIds(count, relations.idHeap);
-        return new Relations<TRelation>(components, poolPositions, positions.start, positions.count);
+        return new Relations<TRelation>(components, poolPositions, positions.start, positions.count, relations);
     }
     
     internal static ref TRelation GetRelation<TRelation, TKey>(EntityStore store, int id, TKey key)
@@ -166,17 +187,19 @@ internal abstract class AbstractEntityRelations
     #endregion
     
 #region mutation
-    internal static bool AddRelation<TRelation>(EntityStoreBase store, int id, in TRelation component)
+    internal static bool AddRelation<TRelation>(EntityStoreBase store, int id, in TRelation relation)
         where TRelation : struct, IRelation
     {
         var relations = GetEntityRelations(store, StructInfo<TRelation>.Index);
-        return relations.AddComponent(id, component);
+        relations.version++;
+        return relations.AddRelation(id, relation);
     }
         
     internal static bool RemoveRelation<TRelation, TKey>(EntityStoreBase store, int id, TKey key)
         where TRelation : struct, IRelation<TKey>
     {
         var relations = (GenericEntityRelations<TRelation,TKey>)GetEntityRelations(store, StructInfo<TRelation>.Index);
+        relations.version++;
         return relations.RemoveRelation(id, key);
     }
     

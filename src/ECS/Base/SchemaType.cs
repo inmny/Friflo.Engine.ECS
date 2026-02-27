@@ -104,26 +104,43 @@ public abstract class SchemaType
         types.Add(typeof(float),        blittable);
         types.Add(typeof(double),       blittable);
         //
-        types.Add(typeof(Guid),         blittable);
-        types.Add(typeof(DateTime),     blittable);
-        types.Add(typeof(BigInteger),   blittable);
-        //
         types.Add(typeof(JsonValue),    blittable);
         types.Add(typeof(Entity),       blittable);
+        // immutable value types in BCL:   https://stackoverflow.com/questions/31721466/examples-of-immutable-types-in-net
+        types.Add(typeof(Guid),             blittable);
+        types.Add(typeof(DateTime),         blittable);
+        types.Add(typeof(TimeSpan),         blittable);
+        types.Add(typeof(DateTimeOffset),   blittable);
+        types.Add(typeof(BigInteger),       blittable);
         //
-        types.Add(typeof(string),       blittable);
+        // immutable reference types in BCL
+        types.Add(typeof(string),           blittable);
+        types.Add(typeof(Uri),              blittable);
+        types.Add(typeof(Type),             blittable);
+        types.Add(typeof(Version),          blittable);
+        types.Add(typeof(DBNull),           blittable);
     }
     
     // todo - add test assertion EntityName is a blittable type 
-    internal static BlittableType GetBlittableType(Type type)
+    internal static BlittableType GetBlittableType(Type type, bool isBaseType)
     {
         // if (type.Name == "CycleClass") { _ = 42; }
         if (BlittableTypes.TryGetValue(type, out BlittableType blittable)) {
             return blittable;
         }
-        if (type.IsArray) {
+        if (type.IsEnum) {
+            blittable = BlittableType.Blittable;    // https://stackoverflow.com/questions/31721466/examples-of-immutable-types-in-net
+        } else if (type.Namespace == "System.Collections.Immutable") {
+            blittable = BlittableType.Blittable;    // https://stackoverflow.com/questions/31721466/examples-of-immutable-types-in-net
+        } else if (typeof(Delegate).IsAssignableFrom(type)) {
+            blittable = BlittableType.Blittable;    // https://stackoverflow.com/questions/31721466/examples-of-immutable-types-in-net
+       } else if (Attribute.IsDefined(type, typeof(BlittableTypeAttribute))) {
+            blittable = BlittableType.Blittable;
+        } else if (type.IsArray) {
             blittable = BlittableType.NonBlittable;    
-        } else if (type.IsClass || type.IsValueType) {
+        } else if (type.IsClass && !isBaseType) {
+            blittable = BlittableType.NonBlittable;
+        } else if (type.IsValueType) {
             // detect cycle in class type hierarchy by adding a temporary unknown
             BlittableTypes.Add(type, BlittableType.Unknown);
             blittable = AreAllMembersBlittable(type);
@@ -147,7 +164,7 @@ public abstract class SchemaType
             switch (member) {
                 case FieldInfo fieldInfo:
                     var fieldType = fieldInfo.FieldType;
-                    if (GetBlittableType(fieldType) == BlittableType.Blittable) {
+                    if (GetBlittableType(fieldType, false) == BlittableType.Blittable) {
                         continue;
                     }
                     return BlittableType.NonBlittable;
